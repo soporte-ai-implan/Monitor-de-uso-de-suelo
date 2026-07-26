@@ -1,0 +1,26 @@
+# Secretos
+.env
+
+# Base de datos y cache generados en cada corrida
+*.db
+*.db-journal
+data/cache_geocoding.json
+
+# Bitacora del scheduler
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+.pytest_cache/
+
+# Sistema operativo / editor
+Thumbs.db
+desktop.ini
+.DS_Store
+.vscode/
+.idea/

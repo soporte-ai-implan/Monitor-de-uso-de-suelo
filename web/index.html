@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="es-MX">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor de Suelo — IMPLAN Torreón</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700;800&family=Libre+Franklin:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+
+<style>
+  :root{
+    --crema:#FBF9F6; --papel:#fff; --tinta:#1B1714; --gris:#5C554D;
+    --gris-claro:#8A8178; --borde:#E3DCD2; --borde-punteado:#D8CFC2;
+    --naranja:#E95026; --verde:#1A7A47; --ambar:#C9881E;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; background:var(--crema); color:var(--tinta);
+    font-family:'Libre Franklin',system-ui,sans-serif; font-size:15px; line-height:1.55;
+  }
+  .envoltorio{max-width:1180px; margin:0 auto; padding:28px 20px 56px}
+  h1,h2,h3{font-family:'Archivo',sans-serif; letter-spacing:-.01em; margin:0}
+  h1{font-size:1.9rem; font-weight:800}
+  h2{font-size:1.5rem; font-weight:800}
+  h3{font-size:1rem; font-weight:700}
+  .sutil{color:var(--gris-claro); font-size:.8rem}
+
+  header.tope{
+    display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end;
+    justify-content:space-between; padding-bottom:18px; margin-bottom:24px;
+    border-bottom:2px solid var(--tinta);
+  }
+  .marca{display:flex; align-items:center; gap:10px; margin-bottom:6px}
+  .punto-marca{width:11px; height:11px; border-radius:50%; background:var(--naranja)}
+  .etiqueta-marca{
+    font-family:'Archivo',sans-serif; font-size:.72rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:.09em; color:var(--gris-claro);
+  }
+  .fuentes{display:flex; gap:6px; flex-wrap:wrap}
+  .chip{
+    font-size:.7rem; font-weight:600; padding:4px 10px; border-radius:20px;
+    background:#F2EEE8; color:var(--gris); border:1px solid var(--borde);
+  }
+  .chip.vivo::before{content:'● '; color:var(--verde)}
+  .chip.apagado{opacity:.55; text-decoration:line-through}
+
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:14px; margin-bottom:26px}
+  .kpi{background:var(--papel); border:1px solid var(--borde); border-radius:14px; padding:16px 18px}
+  .kpi .rotulo{
+    font-size:.7rem; font-weight:700; text-transform:uppercase;
+    letter-spacing:.07em; color:var(--gris-claro); display:block; margin-bottom:8px;
+  }
+  .kpi .cifra{font-family:'Archivo',sans-serif; font-size:1.75rem; font-weight:800; line-height:1}
+  .kpi .pie{font-size:.74rem; color:var(--gris); margin-top:5px}
+
+  .tarjeta-mapa{background:var(--papel); border:1px solid var(--borde); border-radius:16px; padding:20px; margin-bottom:22px}
+  .barra-mapa{display:flex; flex-wrap:wrap; gap:14px; align-items:center; justify-content:space-between; margin-bottom:16px}
+  .capas{display:flex; gap:8px; flex-wrap:wrap}
+  .interruptor{
+    display:inline-flex; align-items:center; gap:7px; cursor:pointer; user-select:none;
+    font-size:.78rem; font-weight:600; padding:7px 13px; border-radius:9px;
+    border:1px solid var(--borde); background:#FBF9F6; color:var(--gris);
+    transition:background .15s, color .15s, border-color .15s;
+  }
+  .interruptor input{margin:0; accent-color:var(--naranja); cursor:pointer}
+  .interruptor:hover{border-color:var(--gris-claro)}
+  .interruptor.activo{background:var(--tinta); color:#fff; border-color:var(--tinta)}
+
+  #mapa{height:600px; width:100%; border-radius:12px; z-index:1; background:#EDE9E3}
+
+  .leyenda{display:flex; flex-wrap:wrap; gap:8px 18px; margin-top:16px; padding-top:14px; border-top:1px dashed var(--borde-punteado)}
+  .item-leyenda{display:inline-flex; align-items:center; gap:8px; font-size:.79rem; color:var(--gris)}
+  .trazo{width:22px; height:0; border-top:3px solid; border-radius:2px; flex-shrink:0}
+  .item-leyenda b{color:var(--tinta); font-weight:700}
+
+  .nota{
+    background:#FFF8F4; border:1px solid #F3D9CC; border-left:4px solid var(--naranja);
+    border-radius:10px; padding:14px 16px; font-size:.82rem; color:#6B4132; margin-bottom:22px;
+  }
+  .nota b{color:#4A2A1E}
+  .nota ul{margin:8px 0 0; padding-left:20px}
+  .nota li{margin-bottom:3px}
+
+  .diagnostico{background:var(--papel); border:1px solid var(--borde); border-radius:14px; padding:18px 20px}
+  .rejilla-diag{display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:12px; margin-top:12px}
+  .celda-diag{padding:11px 13px; border-radius:10px; background:#FBF9F6; border:1px solid var(--borde)}
+  .celda-diag .n{font-family:'Archivo',sans-serif; font-size:1.3rem; font-weight:800}
+  .celda-diag .t{font-size:.72rem; color:var(--gris-claro); font-weight:600}
+  .celda-diag.bien .n{color:var(--verde)}
+  .celda-diag.ojo .n{color:var(--ambar)}
+  .celda-diag.mal .n{color:var(--naranja)}
+
+  /* --- marcador con pulso, ciclo 1.8s --- */
+  @keyframes pulsoAnillo{
+    0%{transform:scale(.55); opacity:.65}
+    70%{transform:scale(2.5); opacity:0}
+    100%{transform:scale(2.5); opacity:0}
+  }
+  .marcador-pulso{background:transparent!important; border:0!important}
+  .capa-pulso{position:absolute; inset:0; border-radius:50%; animation:pulsoAnillo 1800ms ease-out infinite}
+  .nucleo-punto{
+    position:absolute; left:3px; top:3px; width:8px; height:8px; border-radius:50%;
+    border:2px solid #fff; box-shadow:0 1px 3px rgba(0,0,0,.4);
+  }
+  .marcador-borde .nucleo-punto{border-style:dashed}
+
+  /* --- tooltip de hover --- */
+  .leaflet-tooltip.globo{
+    background:var(--tinta); color:#fff; border:0; border-radius:10px;
+    box-shadow:0 6px 20px rgba(0,0,0,.28); padding:9px 12px;
+    font-family:'Libre Franklin',sans-serif; font-size:.78rem; line-height:1.45;
+  }
+  .leaflet-tooltip.globo::before{border-top-color:var(--tinta)}
+  .globo .g-zona{
+    font-family:'Archivo',sans-serif; font-weight:800; font-size:.68rem;
+    text-transform:uppercase; letter-spacing:.06em; display:block; margin-bottom:3px;
+  }
+  .globo .g-precio{font-family:'Archivo',sans-serif; font-weight:800; font-size:.95rem; color:#fff}
+  .globo .g-meta{color:#C9C2BA; font-size:.73rem}
+  .globo .g-pista{color:#8A8178; font-size:.68rem; margin-top:5px; font-style:italic}
+
+  .emergente{font-family:'Libre Franklin',sans-serif; min-width:210px}
+  .emergente .e-tope{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:7px}
+  .emergente .e-zona{font-family:'Archivo',sans-serif; font-weight:800; font-size:.7rem; text-transform:uppercase; letter-spacing:.06em}
+  .emergente .e-precio{font-family:'Archivo',sans-serif; font-weight:800; font-size:1.1rem; margin-bottom:2px}
+  .emergente .e-meta{font-size:.76rem; color:var(--gris); margin-bottom:9px}
+  .emergente .e-liga{
+    display:inline-flex; align-items:center; gap:6px; font-size:.76rem; font-weight:700;
+    color:#fff; padding:7px 12px; border-radius:8px; text-decoration:none;
+  }
+  .aviso-borde{
+    font-size:.7rem; color:#8A5A20; background:#FDF6E7; border:1px solid #F0DFB8;
+    border-radius:6px; padding:4px 7px; margin-bottom:8px;
+  }
+
+  @media (max-width:640px){
+    #mapa{height:420px}
+    h1{font-size:1.5rem}
+    .envoltorio{padding:20px 14px 40px}
+  }
+</style>
+</head>
+<body>
+<div class="envoltorio">
+
+  <header class="tope">
+    <div>
+      <div class="marca">
+        <span class="punto-marca"></span>
+        <span class="etiqueta-marca">IMPLAN Torreón · Monitor de Suelo</span>
+      </div>
+      <h1>Oferta de terrenos en venta</h1>
+      <p class="sutil" style="margin:6px 0 0">
+        Actualizado: <b id="sello-fecha">—</b> ·
+        Origen: <b id="sello-origen">—</b>
+      </p>
+    </div>
+    <div>
+      <div class="sutil" style="margin-bottom:6px; font-weight:600">Fuentes monitoreadas</div>
+      <div class="fuentes">
+        <span class="chip vivo">Inmuebles24</span>
+        <span class="chip vivo">Pincali</span>
+        <span class="chip apagado" title="Descartado: los 2 actores disponibles fallaron en pruebas reales">Vivanuncios</span>
+      </div>
+    </div>
+  </header>
+
+  <section class="kpis">
+    <div class="kpi">
+      <span class="rotulo">Terrenos en oferta</span>
+      <div class="cifra" id="kpi-total">—</div>
+      <div class="pie" id="kpi-total-pie">dentro de las 5 zonas</div>
+    </div>
+    <div class="kpi">
+      <span class="rotulo">Precio promedio</span>
+      <div class="cifra" id="kpi-precio">—</div>
+      <div class="pie">por m² de terreno</div>
+    </div>
+    <div class="kpi">
+      <span class="rotulo">Superficie mediana</span>
+      <div class="cifra" id="kpi-m2">—</div>
+      <div class="pie">m² por predio</div>
+    </div>
+    <div class="kpi">
+      <span class="rotulo">Zona con más oferta</span>
+      <div class="cifra" id="kpi-zona" style="font-size:1.1rem; line-height:1.25">—</div>
+      <div class="pie" id="kpi-zona-pie">&nbsp;</div>
+    </div>
+  </section>
+
+  <div class="nota" id="nota-alcance">
+    <b>Alcance de esta versión.</b>
+    <ul>
+      <li>El monitor arranca con <b>2 fuentes</b> (Inmuebles24 y Pincali), no 3: Vivanuncios quedó descartado porque los dos actores disponibles fallaron en pruebas reales.</li>
+      <li>Las 5 zonas provienen de los polígonos oficiales fusionados (SEPOMEX); se dibuja <b>solo el contorno exterior</b>, sin divisiones internas de colonias.</li>
+      <li id="nota-datos">Los puntos mostrados son de ejemplo hasta que el pipeline quede conectado.</li>
+    </ul>
+  </div>
+
+  <section class="tarjeta-mapa">
+    <div class="barra-mapa">
+      <div>
+        <h2>Distribución de la oferta por zona</h2>
+        <p class="sutil" style="margin:4px 0 0">Pasa el cursor sobre un punto para ver el detalle; haz clic para abrir el anuncio.</p>
+      </div>
+      <div class="capas">
+        <label class="interruptor activo" id="lbl-calor"><input type="checkbox" id="sw-calor" checked> Mapa de calor</label>
+        <label class="interruptor activo" id="lbl-zonas"><input type="checkbox" id="sw-zonas" checked> Contorno de zonas</label>
+        <label class="interruptor activo" id="lbl-puntos"><input type="checkbox" id="sw-puntos" checked> Puntos</label>
+      </div>
+    </div>
+
+    <div id="mapa"></div>
+    <div class="leyenda" id="leyenda"></div>
+  </section>
+
+  <section class="diagnostico">
+    <h3>Validación geográfica de los puntos</h3>
+    <p class="sutil" style="margin:5px 0 0">
+      Cada anuncio se prueba contra la geometría real de las zonas (point-in-polygon).
+      Nunca se mueven las coordenadas de un anuncio: si cae fuera, se etiqueta.
+    </p>
+    <div class="rejilla-diag" id="rejilla-diag"></div>
+  </section>
+
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="zonas.js"></script>
+<script src="puntos_demo.js"></script>
+<script src="geo.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  // Si la API esta arriba usa datos reales; si no, cae a los puntos de ejemplo.
+  var API = (window.MONITOR_API_URL || 'http://localhost:8000');
+
+  var mxn = function(v){ return '$' + Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };
+  var num = function(v){ return Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };
+
+  var mapa = L.map('mapa', { scrollWheelZoom:false, zoomControl:true });
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    maxZoom:19, attribution:'&copy; OpenStreetMap &copy; CARTO'
+  }).addTo(mapa);
+
+  var capaZonas  = L.layerGroup().addTo(mapa);
+  var capaCalor  = L.layerGroup().addTo(mapa);
+  var capaPuntos = L.layerGroup().addTo(mapa);
+
+  /* ---------- contornos reales, solo linea ---------- */
+  var conteoPorZona = {};
+
+  function dibujarZonas(){
+    capaZonas.clearLayers();
+    (window.TORREON_ZONAS.features || []).forEach(function(f){
+      var nombre = GeoZonas.nombreDe(f);
+      var color  = GeoZonas.COLOR_ZONA[nombre] || '#8A8178';
+      // fill:false -> solo el borde externo, sin divisiones internas.
+      L.geoJSON(f, {
+        style: { color:color, weight:2.6, opacity:.9, fill:false, lineJoin:'round', lineCap:'round' }
+      }).addTo(capaZonas);
+    });
+    mapa.fitBounds(GeoZonas.boundsDe(window.TORREON_ZONAS), { padding:[24,24] });
+  }
+
+  /* ---------- capa de calor alimentada por puntos reales ---------- */
+  function dibujarCalor(puntos){
+    capaCalor.clearLayers();
+    if (!puntos.length) return;
+    // Peso por precio/m2: los predios mas caros pesan mas en la mancha de calor.
+    var ppm = puntos.map(precioPorM2).filter(function(v){ return v > 0; });
+    var tope = ppm.length ? Math.max.apply(null, ppm) : 1;
+    var datos = puntos.map(function(p){
+      var v = precioPorM2(p);
+      return [p.lat, p.lon, v > 0 ? Math.max(.35, v / tope) : .5];
+    });
+    L.heatLayer(datos, {
+      radius:34, blur:26, maxZoom:15, minOpacity:.32,
+      gradient:{ .2:'#c9d9ea', .4:'#7fa8cf', .6:'#e9a26f', .8:'#E95026', 1:'#b5341a' }
+    }).addTo(capaCalor);
+  }
+
+  function precioPorM2(p){
+    if (p.precio_m2) return Number(p.precio_m2);
+    if (p.precio && p.m2 && Number(p.m2) > 0) return Number(p.precio) / Number(p.m2);
+    return 0;
+  }
+
+  /* ---------- puntos animados con hover y clic ---------- */
+  function dibujarPuntos(puntos){
+    capaPuntos.clearLayers();
+
+    puntos.forEach(function(p){
+      var color = p._color || '#8A8178';
+      var esBorde = p._estado === 'borde';
+
+      var icono = L.divIcon({
+        className: 'marcador-pulso' + (esBorde ? ' marcador-borde' : ''),
+        html:
+          '<div style="position:relative;width:14px;height:14px">' +
+            '<div class="capa-pulso" style="background:'+color+'"></div>' +
+            '<div class="capa-pulso" style="background:'+color+';animation-delay:900ms"></div>' +
+            '<div class="nucleo-punto" style="background:'+color+'"></div>' +
+          '</div>',
+        iconSize:[14,14], iconAnchor:[7,7]
+      });
+
+      var ppm = precioPorM2(p);
+      var etiquetaZona = p.zona || 'Sin zona';
+      var portal = p.portal || p.fuente || 'Origen no especificado';
+
+      var partesMeta = [];
+      if (p.m2) partesMeta.push(num(p.m2) + ' m²');
+      if (p.precio) partesMeta.push(mxn(p.precio) + ' total');
+      if (p.nombre_colonia) partesMeta.unshift(p.nombre_colonia);
+
+      // Hover: tooltip pegado al cursor.
+      var globo =
+        '<span class="g-zona" style="color:'+color+'">'+ etiquetaZona +'</span>' +
+        '<div class="g-precio">'+ (ppm ? mxn(ppm) + ' /m²' : (p.precio ? mxn(p.precio) : 'Precio no publicado')) +'</div>' +
+        '<div class="g-meta">'+ (partesMeta.join(' · ') || 'Sin datos de superficie') +'</div>' +
+        '<div class="g-meta">'+ portal + (p.fecha_publicacion ? ' · ' + p.fecha_publicacion : '') +'</div>' +
+        (esBorde ? '<div class="g-pista">Fuera del polígono, asignado por cercanía ('+ p._distanciaKm.toFixed(1) +' km)</div>' : '') +
+        (p.url ? '<div class="g-pista">Clic para abrir el anuncio</div>' : '');
+
+      // Clic: popup con la ficha completa.
+      var ficha =
+        '<div class="emergente">' +
+          (esBorde ? '<div class="aviso-borde">Predio en el borde de la mancha urbana: se asignó a la zona más cercana ('+ p._distanciaKm.toFixed(1) +' km del polígono).</div>' : '') +
+          '<div class="e-tope">' +
+            '<span class="e-zona" style="color:'+color+'">'+ etiquetaZona +'</span>' +
+            '<span class="chip">'+ portal +'</span>' +
+          '</div>' +
+          (p.nombre_colonia ? '<div style="font-weight:600;font-size:.84rem;margin-bottom:4px">'+ p.nombre_colonia +'</div>' : '') +
+          '<div class="e-precio">'+ (ppm ? mxn(ppm) + ' /m²' : (p.precio ? mxn(p.precio) : 'Precio no publicado')) +'</div>' +
+          '<div class="e-meta">'+ (partesMeta.join(' · ') || 'Sin datos de superficie') +
+            (p.fecha_publicacion ? '<br>Publicado: ' + p.fecha_publicacion : '') +
+          '</div>' +
+          (p.url
+            ? '<a class="e-liga" style="background:'+color+'" href="'+ p.url +'" target="_blank" rel="noopener noreferrer">Ver anuncio ↗</a>'
+            : '<span class="sutil">Sin liga al anuncio original</span>') +
+        '</div>';
+
+      L.marker([p.lat, p.lon], { icon:icono, riseOnHover:true })
+        .bindTooltip(globo, { className:'globo', direction:'top', offset:[0,-10], sticky:true, opacity:1 })
+        .bindPopup(ficha)
+        .addTo(capaPuntos);
+    });
+  }
+
+  /* ---------- leyenda con conteo real ---------- */
+  function dibujarLeyenda(){
+    var cont = document.getElementById('leyenda');
+    cont.innerHTML = '';
+    (window.TORREON_ZONAS.features || []).forEach(function(f){
+      var nombre = GeoZonas.nombreDe(f);
+      var color  = GeoZonas.COLOR_ZONA[nombre] || '#8A8178';
+      var n = conteoPorZona[nombre] || 0;
+      var corto = nombre.replace(/^Zona \d+ - /, '');
+      var el = document.createElement('span');
+      el.className = 'item-leyenda';
+      el.innerHTML = '<span class="trazo" style="border-top-color:'+color+'"></span>' +
+                     corto + ' <b>('+ n +')</b>';
+      cont.appendChild(el);
+    });
+  }
+
+  /* ---------- KPIs y panel de diagnostico ---------- */
+  function pintarKpis(puntos, resumen){
+    document.getElementById('kpi-total').textContent = puntos.length;
+    document.getElementById('kpi-total-pie').textContent =
+      resumen.fuera ? (resumen.fuera + ' descartado(s) fuera del municipio') : 'dentro de las 5 zonas';
+
+    var ppm = puntos.map(precioPorM2).filter(function(v){ return v > 0; });
+    document.getElementById('kpi-precio').textContent = ppm.length
+      ? mxn(ppm.reduce(function(a,b){ return a+b; }, 0) / ppm.length)
+      : '—';
+
+    var m2 = puntos.map(function(p){ return Number(p.m2); })
+                   .filter(function(v){ return v > 0; }).sort(function(a,b){ return a-b; });
+    document.getElementById('kpi-m2').textContent = m2.length
+      ? num(m2[Math.floor(m2.length/2)])
+      : '—';
+
+    var lider = null;
+    Object.keys(conteoPorZona).forEach(function(z){
+      if (!lider || conteoPorZona[z] > conteoPorZona[lider]) lider = z;
+    });
+    document.getElementById('kpi-zona').textContent = lider ? lider.replace(/^Zona \d+ - /, '') : '—';
+    document.getElementById('kpi-zona-pie').textContent = lider ? conteoPorZona[lider] + ' terrenos' : ' ';
+  }
+
+  function pintarDiagnostico(resumen){
+    var celdas = [
+      { t:'Dentro del polígono', n:resumen.dentro, c:'bien' },
+      { t:'Asignados por cercanía (≤'+ GeoZonas.TOLERANCIA_KM +' km)', n:resumen.borde, c:'ojo' },
+      { t:'Descartados: otro municipio', n:resumen.otroMunicipio, c:'mal' },
+      { t:'Descartados: lejos de toda zona', n:resumen.fuera - resumen.otroMunicipio, c:'mal' },
+      { t:'Sin coordenadas', n:resumen.sinCoords, c:'mal' }
+    ];
+    var cont = document.getElementById('rejilla-diag');
+    cont.innerHTML = '';
+    celdas.forEach(function(x){
+      var d = document.createElement('div');
+      d.className = 'celda-diag ' + x.c;
+      d.innerHTML = '<div class="n">'+ x.n +'</div><div class="t">'+ x.t +'</div>';
+      cont.appendChild(d);
+    });
+  }
+
+  /* ---------- interruptores de capa ---------- */
+  function conectarInterruptor(idSw, idLbl, capa){
+    var sw = document.getElementById(idSw), lbl = document.getElementById(idLbl);
+    sw.addEventListener('change', function(){
+      if (sw.checked){ mapa.addLayer(capa); lbl.classList.add('activo'); }
+      else { mapa.removeLayer(capa); lbl.classList.remove('activo'); }
+    });
+  }
+  conectarInterruptor('sw-calor',  'lbl-calor',  capaCalor);
+  conectarInterruptor('sw-zonas',  'lbl-zonas',  capaZonas);
+  conectarInterruptor('sw-puntos', 'lbl-puntos', capaPuntos);
+
+  /* ---------- arranque ---------- */
+  function render(anuncios, origen, fecha){
+    var r = GeoZonas.clasificarLista(anuncios, window.TORREON_ZONAS);
+
+    conteoPorZona = {};
+    r.dibujables.forEach(function(p){
+      if (p.zona) conteoPorZona[p.zona] = (conteoPorZona[p.zona] || 0) + 1;
+    });
+
+    dibujarCalor(r.dibujables);
+    dibujarPuntos(r.dibujables);
+    dibujarLeyenda();
+    pintarKpis(r.dibujables, r.resumen);
+    pintarDiagnostico(r.resumen);
+
+    document.getElementById('sello-origen').textContent = origen;
+    document.getElementById('sello-fecha').textContent = fecha ||
+      new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' });
+
+    if (r.resumen.fuera) {
+      console.warn('Anuncios fuera de las 5 zonas (no dibujados):', r.descartados);
+    }
+  }
+
+  dibujarZonas();
+
+  // Intenta la API; si no responde en 4s usa los puntos de ejemplo.
+  var control = new AbortController();
+  var reloj = setTimeout(function(){ control.abort(); }, 4000);
+
+  fetch(API + '/api/monitor-terrenos', { signal:control.signal })
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+    .then(function(d){
+      clearTimeout(reloj);
+      var lista = d.terrenos || [];
+      if (!lista.length) throw new Error('la API respondió sin terrenos');
+      document.getElementById('nota-datos').innerHTML =
+        'Datos <b>reales</b> del pipeline: ' + lista.length + ' anuncios activos vía Inmuebles24 y Pincali.';
+      render(lista, 'API del pipeline (datos reales)', d.ultima_actualizacion);
+    })
+    .catch(function(err){
+      clearTimeout(reloj);
+      console.info('API no disponible (' + err.message + '); usando puntos de ejemplo.');
+      render(window.PUNTOS_DEMO || [], 'puntos de ejemplo (API sin conectar)', null);
+    });
+
+})();
+</script>
+</body>
+</html>
