@@ -63,6 +63,8 @@ data/
 tests/
   test_zonas.py     paridad Python/JS + validación geográfica
   test_database.py  blindajes contra bajas falsas + filtros
+  test_scraper.py   normalizadores + compatibilidad de apify-client
+  test_api.py       endpoints + encabezados CORS
 
 tools/
   generar_assets_web.py  data/*.json -> web/*.js
@@ -84,6 +86,8 @@ Cada módulo tiene su documento con las decisiones técnicas y por qué se tomar
 
 ## Pruebas
 
+Las cuatro corren **sin token de Apify** y sin red:
+
 ```bash
 python tests/test_zonas.py
 ```
@@ -92,9 +96,21 @@ python tests/test_zonas.py
 python tests/test_database.py
 ```
 
-La primera verifica que `zonas.py` (pipeline) y `web/geo.js` (mapa) den el mismo
-resultado — si divergen, la base y el dashboard se contradicen. La segunda prueba
-que un fallo del scraper no vacíe el monitor.
+```bash
+python tests/test_scraper.py
+```
+
+```bash
+python tests/test_api.py
+```
+
+- `test_zonas` — que `zonas.py` (pipeline) y `web/geo.js` (mapa) den el mismo
+  resultado; si divergen, la base y el dashboard se contradicen.
+- `test_database` — que un fallo del scraper no vacíe el monitor.
+- `test_scraper` — los normalizadores contra los schemas reales, y que el
+  lector de campos funcione con las dos formas de respuesta de `apify-client`
+  (ver [docs/scraper.md](docs/scraper.md)).
+- `test_api` — que los endpoints respondan y que salgan los encabezados CORS.
 
 ## Fuentes de datos
 

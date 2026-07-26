@@ -7,6 +7,10 @@ fastapi>=0.110.0           # API que consume el dashboard
 uvicorn[standard]>=0.29.0  # servidor de la API
 apscheduler>=3.10.0        # scheduler en proceso (alternativa a cron/Task Scheduler)
 
+# Solo para correr las pruebas (tests/test_api.py usa fastapi.testclient,
+# que a su vez exige httpx2 en las versiones recientes de starlette).
+httpx2>=0.28.0
+
 # Nota: no se usa shapely ni geopandas a proposito. El point-in-polygon esta
 # implementado a mano en zonas.py (~60 lineas) para que el pipeline instale sin
 # dependencias binarias/GDAL, que en Windows son la principal fuente de dolor

@@ -42,13 +42,42 @@ def _cliente() -> ApifyClient:
     return ApifyClient(token)
 
 
+def _campo(obj: Any, *nombres: str) -> Any:
+    """
+    Lee un campo sin importar la version de apify-client.
+
+    En 1.x/2.x `actor().call()` regresaba un dict con llaves camelCase
+    ('defaultDatasetId'). En 3.x regresa un modelo Pydantic con atributos
+    snake_case ('default_dataset_id'). El servidor de IMPLAN puede tener
+    cualquiera de las dos, asi que se prueban ambas formas en vez de fijar
+    una version y confiar en que nadie actualice.
+    """
+    for n in nombres:
+        if isinstance(obj, dict):
+            if n in obj:
+                return obj[n]
+        elif hasattr(obj, n):
+            return getattr(obj, n)
+    return None
+
+
 def _correr_actor(client: ApifyClient, actor_id: str, run_input: dict) -> list[dict]:
     run = client.actor(actor_id).call(run_input=run_input)
     if run is None:
         raise RuntimeError(f"El Actor {actor_id} no regresó información de corrida.")
-    if run.get("status") != "SUCCEEDED":
-        raise RuntimeError(f"El Actor {actor_id} terminó en estado {run.get('status')}.")
-    return client.dataset(run["defaultDatasetId"]).list_items().items
+
+    estatus = _campo(run, "status")
+    # En 3.x el estatus puede venir como enum; str() lo deja comparable.
+    if estatus is not None and str(getattr(estatus, "value", estatus)) != "SUCCEEDED":
+        raise RuntimeError(f"El Actor {actor_id} terminó en estado {estatus}.")
+
+    dataset_id = _campo(run, "default_dataset_id", "defaultDatasetId")
+    if not dataset_id:
+        raise RuntimeError(f"El Actor {actor_id} no expuso un dataset de salida.")
+
+    pagina = client.dataset(dataset_id).list_items()
+    items = _campo(pagina, "items")
+    return list(items) if items is not None else []
 
 
 def _num(v: Any) -> float | None:

@@ -62,6 +62,30 @@ Para terrenos el campo de superficie útil es **`land_area_m2`**, no
 Ojo: **`title` en Pincali viene siempre `null`**, así que el título se arma con
 `{propertyType} en {locationText}`.
 
+## Compatibilidad con versiones de `apify-client`
+
+Ojo con esto, porque rompe el pipeline en silencio. La librería cambió la forma
+de la respuesta entre versiones mayores:
+
+| Versión | Qué regresa `actor().call()` |
+|---|---|
+| 1.x / 2.x | un `dict` con llaves camelCase — `run["defaultDatasetId"]` |
+| 3.x | un modelo Pydantic con atributos snake_case — `run.default_dataset_id` |
+
+El código de muestra original usaba `run.get("status")` y
+`run["defaultDatasetId"]`, que en 3.x truenan con `AttributeError`. Al instalar
+`requirements.txt` hoy entra la **3.1.0**, así que era un fallo garantizado en la
+primera corrida real.
+
+`_campo(obj, *nombres)` resuelve las dos formas: prueba acceso por llave si es
+dict y por atributo si no, con los dos nombres posibles. También normaliza el
+estatus, que en 3.x puede llegar como enum en vez de texto.
+
+Se hizo así en vez de fijar la versión porque el servidor de IMPLAN puede tener
+cualquiera de las dos y nadie va a revisar esto antes de actualizar. Está
+cubierto en `tests/test_scraper.py` con objetos falsos de las dos formas, así que
+no hace falta token de Apify para verificarlo.
+
 ## Decisiones
 
 - **Los ids llevan prefijo de fuente** (`i24-`, `pin-`). Sin eso, un id numérico
