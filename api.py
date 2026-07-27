@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import pathlib
+from datetime import datetime
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
@@ -56,6 +57,41 @@ async def ciclo_de_vida(app: FastAPI):
                 await tarea
 
 
+def _horas_desde_ultima_corrida() -> float | None:
+    """Horas transcurridas desde la última corrida que terminó. None si no hay."""
+    corrida = database.ultima_corrida()
+    if not corrida or not corrida.get("fin"):
+        return None
+    try:
+        fin = datetime.fromisoformat(corrida["fin"])
+    except (ValueError, TypeError):
+        return None
+    return (datetime.now() - fin).total_seconds() / 3600
+
+
+def _toca_correr() -> bool:
+    """
+    Decide si toca corrida, mirando la bitácora en vez de confiar en el reloj
+    del proceso.
+
+    Sin esto, cada reinicio del contenedor dispararía una corrida nueva: veinte
+    reinicios, veinte llamadas a Apify. Es la forma más fácil de vaciar el
+    crédito en un día sin que nadie lo note, y de que la prueba muera sola.
+    """
+    horas = _horas_desde_ultima_corrida()
+    if horas is None:
+        log.info("no hay corridas previas: toca correr")
+        return True
+    if horas >= INTERVALO_HORAS:
+        log.info("última corrida hace %.1f h (>= %.1f): toca correr", horas, INTERVALO_HORAS)
+        return True
+    log.info(
+        "última corrida hace %.1f h (< %.1f): se omite, probablemente un reinicio",
+        horas, INTERVALO_HORAS,
+    )
+    return False
+
+
 async def _bucle_corridas() -> None:
     """
     Corre el pipeline cada INTERVALO_HORAS sin tumbar la API si algo falla.
@@ -70,16 +106,20 @@ async def _bucle_corridas() -> None:
     await asyncio.sleep(30)
     while True:
         try:
-            log.info("disparando corrida programada")
-            r = await asyncio.to_thread(pipeline.correr_monitor)
-            log.info("corrida '%s' terminada", r.get("estatus"))
+            if _toca_correr():
+                log.info("disparando corrida programada")
+                r = await asyncio.to_thread(pipeline.correr_monitor)
+                log.info("corrida '%s' terminada", r.get("estatus"))
         except asyncio.CancelledError:
             raise
         except Exception:
             # Una corrida fallida no debe tumbar el servicio: queda registrada
             # en la tabla `corridas` y se reintenta en el siguiente turno.
             log.exception("la corrida falló; el servicio sigue arriba")
-        await asyncio.sleep(INTERVALO_HORAS * 3600)
+
+        # Se revisa cada hora, pero _toca_correr() decide si de verdad procede.
+        # Asi el intervalo lo manda la bitacora persistente, no el proceso.
+        await asyncio.sleep(min(3600, INTERVALO_HORAS * 3600))
 
 
 app = FastAPI(

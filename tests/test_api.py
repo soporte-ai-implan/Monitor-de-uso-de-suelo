@@ -50,6 +50,37 @@ def main() -> int:
           "SCHEDULER_EN_API apagado si no se define",
           "si estuviera prendido, levantar la API en local pondría a scrapear")
 
+    print("\nGuardia anti-reinicio (protege el crédito de Apify)")
+    import datetime as _dt
+
+    original = api.database.ultima_corrida
+    try:
+        # Sin corridas previas -> sí debe correr
+        api.database.ultima_corrida = lambda: None
+        check(api._toca_correr() is True, "sin corridas previas, corre")
+
+        # Corrida hace 10 minutos -> NO debe correr (esto es un reinicio)
+        hace_10min = (_dt.datetime.now() - _dt.timedelta(minutes=10)).isoformat()
+        api.database.ultima_corrida = lambda: {"fin": hace_10min, "estatus": "ok"}
+        check(api._toca_correr() is False,
+              "tras un reinicio reciente NO vuelve a scrapear",
+              "sin esto, 20 reinicios = 20 llamadas a Apify")
+
+        # Corrida hace 25 horas -> sí debe correr
+        hace_25h = (_dt.datetime.now() - _dt.timedelta(hours=25)).isoformat()
+        api.database.ultima_corrida = lambda: {"fin": hace_25h, "estatus": "ok"}
+        check(api._toca_correr() is True, "pasadas las 24 h sí corre")
+
+        # Corrida sin fecha de fin (quedó a medias) -> corre
+        api.database.ultima_corrida = lambda: {"fin": None, "estatus": "en_proceso"}
+        check(api._toca_correr() is True, "si la última quedó sin cerrar, corre")
+
+        # Fecha corrupta -> corre (no se queda trabado)
+        api.database.ultima_corrida = lambda: {"fin": "no-es-fecha", "estatus": "ok"}
+        check(api._toca_correr() is True, "con fecha ilegible no se traba, corre")
+    finally:
+        api.database.ultima_corrida = original
+
     print("\nForma de la respuesta que consume el mapa")
     d = c.get("/api/monitor-terrenos").json()
     for llave in ("total", "ultima_actualizacion", "terrenos", "fuentes"):
