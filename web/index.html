@@ -175,9 +175,9 @@
       <div class="pie" id="kpi-total-pie">dentro de las 5 zonas</div>
     </div>
     <div class="kpi">
-      <span class="rotulo">Precio promedio</span>
+      <span class="rotulo">Precio mediano</span>
       <div class="cifra" id="kpi-precio">—</div>
-      <div class="pie">por m² de terreno</div>
+      <div class="pie" id="kpi-precio-pie">por m² de terreno</div>
     </div>
     <div class="kpi">
       <span class="rotulo">Superficie mediana</span>
@@ -292,11 +292,17 @@
     capaCalor.clearLayers();
     if (!puntos.length) return;
     // Peso por precio/m2: los predios mas caros pesan mas en la mancha de calor.
-    var ppm = puntos.map(precioPorM2).filter(function(v){ return v > 0; });
-    var tope = ppm.length ? Math.max.apply(null, ppm) : 1;
+    //
+    // La referencia es el percentil 90 de los precios confiables, no el maximo.
+    // Con el maximo, un solo anuncio a $27,833/m2 (una quinta mal tipificada
+    // como terreno) aplastaba a todos los demas contra el piso de la escala y
+    // el mapa de calor quedaba plano.
+    var ppm = puntos.map(precioPorM2).filter(function(v){ return v > 0 && ppmConfiable(v); }).sort(function(a,b){ return a-b; });
+    var tope = ppm.length ? ppm[Math.floor(ppm.length * 0.9)] || ppm[ppm.length - 1] : 1;
     var datos = puntos.map(function(p){
       var v = precioPorM2(p);
-      return [p.lat, p.lon, v > 0 ? Math.max(.35, v / tope) : .5];
+      var peso = (v > 0 && tope > 0) ? Math.min(1, Math.max(0.3, v / tope)) : 0.5;
+      return [p.lat, p.lon, peso];
     });
     L.heatLayer(datos, {
       radius:34, blur:26, maxZoom:15, minOpacity:.32,
@@ -308,6 +314,20 @@
     if (p.precio_m2) return Number(p.precio_m2);
     if (p.precio && p.m2 && Number(p.m2) > 0) return Number(p.precio) / Number(p.m2);
     return 0;
+  }
+
+  // Rango sensato para $/m² de suelo en Torreón. Fuera de esto es error de
+  // captura del portal, no un precio: en la primera corrida real había un
+  // terreno de 561 m² anunciado en $4,500 ($8/m²), y un solo dato así mueve
+  // el promedio de toda la ciudad. Espeja PRECIO_M2_MINIMO/MAXIMO de database.py.
+  var PPM_MIN = 50, PPM_MAX = 50000;
+  function ppmConfiable(v){ return v >= PPM_MIN && v <= PPM_MAX; }
+
+  function mediana(valores){
+    if (!valores.length) return null;
+    var v = valores.slice().sort(function(a,b){ return a-b; });
+    var n = v.length;
+    return n % 2 ? v[(n-1)/2] : (v[n/2 - 1] + v[n/2]) / 2;
   }
 
   /* ---------- puntos animados con hover y clic ---------- */
@@ -395,10 +415,15 @@
     document.getElementById('kpi-total-pie').textContent =
       resumen.fuera ? (resumen.fuera + ' descartado(s) fuera del municipio') : 'dentro de las 5 zonas';
 
-    var ppm = puntos.map(precioPorM2).filter(function(v){ return v > 0; });
-    document.getElementById('kpi-precio').textContent = ppm.length
-      ? mxn(ppm.reduce(function(a,b){ return a+b; }, 0) / ppm.length)
-      : '—';
+    // Mediana, no promedio: un solo precio mal capturado no debe mover el
+    // indicador principal del dashboard.
+    var todosPpm = puntos.map(precioPorM2).filter(function(v){ return v > 0; });
+    var ppm = todosPpm.filter(ppmConfiable);
+    var atipicos = todosPpm.length - ppm.length;
+    document.getElementById('kpi-precio').textContent = ppm.length ? mxn(mediana(ppm)) : '—';
+    document.getElementById('kpi-precio-pie').textContent = atipicos
+      ? 'por m² · ' + atipicos + ' precio(s) atípico(s) excluido(s)'
+      : 'por m² de terreno';
 
     var m2 = puntos.map(function(p){ return Number(p.m2); })
                    .filter(function(v){ return v > 0; }).sort(function(a,b){ return a-b; });

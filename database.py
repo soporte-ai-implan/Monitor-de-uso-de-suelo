@@ -53,6 +53,31 @@ PALABRAS_EXCLUIR = (
     "edificio", "nave industrial", "quinta", "rancho con casa", "consultorio",
 )
 
+# Rango sensato de precio por m2 para el suelo en Torreon.
+#
+# No es censura de datos: es deteccion de errores de captura del portal. En la
+# primera corrida real aparecio "Terreno en Venta Residencial Las Quintas" a
+# $4,500 por 561 m2 -> $8.02/m2. Un terreno completo por $4,500 no existe; al
+# anunciante se le fueron los ceros. Un solo dato asi mueve el promedio de la
+# ciudad, y ese es el numero que mas se mira.
+#
+# Los anuncios fuera de rango NO se borran: se guardan y se cuentan, pero
+# quedan fuera de las estadisticas de precio. La cota baja deja pasar predios
+# rurales grandes, que legitimamente valen poco por m2.
+PRECIO_M2_MINIMO = 50.0
+PRECIO_M2_MAXIMO = 50_000.0
+
+
+def precio_m2_confiable(valor: Any) -> bool:
+    """Si el precio por m2 sirve para promediar, o es error de captura."""
+    if valor is None:
+        return False
+    try:
+        v = float(valor)
+    except (TypeError, ValueError):
+        return False
+    return PRECIO_M2_MINIMO <= v <= PRECIO_M2_MAXIMO
+
 
 def conectar() -> sqlite3.Connection:
     conn = sqlite3.connect(DB_PATH)

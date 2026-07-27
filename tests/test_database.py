@@ -90,6 +90,25 @@ def main() -> int:
         got = database.es_venta({"operacion": op})
         check(got == esperado, f"es_venta({op!r})", f"esperaba {esperado}, dio {got}")
 
+    print("\nDetección de precios atípicos (errores de captura del portal)")
+    casos_ppm = [
+        (8.02,     False, "el caso real: terreno de 561 m2 anunciado en $4,500"),
+        (13.48,    False, "otro con ceros faltantes"),
+        (49.99,    False, "justo abajo del mínimo"),
+        (50.0,     True,  "el mínimo exacto sí pasa"),
+        (300.0,    True,  "predio rural barato, legítimo"),
+        (4650.0,   True,  "precio urbano típico"),
+        (27833.33, True,  "caro pero plausible en zona premium"),
+        (50000.0,  True,  "el máximo exacto sí pasa"),
+        (50000.01, False, "arriba del máximo"),
+        (None,     False, "sin precio"),
+        ("no",     False, "texto basura"),
+    ]
+    for valor, esperado, desc in casos_ppm:
+        got = database.precio_m2_confiable(valor)
+        check(got == esperado, f"precio_m2_confiable({valor!r}) — {desc}",
+              f"esperaba {esperado}, dio {got}")
+
     print("\nFiltrar() descarta lo que no debe entrar al mapa")
     entrada = [
         anuncio("v1", "inmuebles24"),

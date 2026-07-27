@@ -191,9 +191,30 @@ def obtener_zonas():
     return JSONResponse(content=json.loads(ruta.read_text(encoding="utf-8")))
 
 
+def _mediana(valores: list[float]) -> float | None:
+    if not valores:
+        return None
+    v = sorted(valores)
+    n = len(v)
+    if n % 2:
+        return round(v[n // 2], 2)
+    return round((v[n // 2 - 1] + v[n // 2]) / 2, 2)
+
+
 @app.get("/api/resumen")
 def resumen():
-    """Agregados por zona: lo que alimenta los KPIs y la gráfica de $/m²."""
+    """
+    Agregados por zona: lo que alimenta los KPIs y la gráfica de $/m².
+
+    El indicador principal es la MEDIANA, no el promedio. En la primera corrida
+    real, un anuncio con error de captura ($8/m², cuando el resto anda en miles)
+    bastaba para mover el promedio de toda la ciudad. La mediana no se inmuta
+    con un dato extremo, y en precios de suelo —donde conviven lotes urbanos
+    chicos con predios rurales grandes— describe mejor lo típico.
+
+    El promedio se sigue publicando para quien lo quiera comparar, pero
+    calculado solo sobre precios dentro de un rango sensato.
+    """
     filas = database.obtener_activos()
 
     por_zona: dict[str, dict] = {}
@@ -201,10 +222,10 @@ def resumen():
         z = f.get("zona") or "(sin zona)"
         d = por_zona.setdefault(z, {"zona": z, "total": 0, "precios_m2": [], "m2": []})
         d["total"] += 1
-        if f.get("precio_m2"):
-            d["precios_m2"].append(f["precio_m2"])
+        if database.precio_m2_confiable(f.get("precio_m2")):
+            d["precios_m2"].append(float(f["precio_m2"]))
         if f.get("m2"):
-            d["m2"].append(f["m2"])
+            d["m2"].append(float(f["m2"]))
 
     salida = []
     for z, d in por_zona.items():
@@ -213,17 +234,28 @@ def resumen():
             "zona": z,
             "color": zonas.COLOR_ZONA.get(z),
             "total": d["total"],
+            "precio_m2_mediana": _mediana(ppm),
             "precio_m2_promedio": round(sum(ppm) / len(ppm), 2) if ppm else None,
-            "precio_m2_minimo": min(ppm) if ppm else None,
-            "precio_m2_maximo": max(ppm) if ppm else None,
-            "m2_mediana": sorted(d["m2"])[len(d["m2"]) // 2] if d["m2"] else None,
+            "precio_m2_minimo": round(min(ppm), 2) if ppm else None,
+            "precio_m2_maximo": round(max(ppm), 2) if ppm else None,
+            "m2_mediana": _mediana(d["m2"]),
+            "con_precio_confiable": len(ppm),
         })
     salida.sort(key=lambda x: x["total"], reverse=True)
 
-    todos_ppm = [f["precio_m2"] for f in filas if f.get("precio_m2")]
+    todos = [float(f["precio_m2"]) for f in filas
+             if database.precio_m2_confiable(f.get("precio_m2"))]
+    descartados = sum(
+        1 for f in filas
+        if f.get("precio_m2") and not database.precio_m2_confiable(f.get("precio_m2"))
+    )
+
     return {
         "total_terrenos": len(filas),
-        "precio_m2_promedio_ciudad": round(sum(todos_ppm) / len(todos_ppm), 2) if todos_ppm else None,
+        "precio_m2_mediana_ciudad": _mediana(todos),
+        "precio_m2_promedio_ciudad": round(sum(todos) / len(todos), 2) if todos else None,
+        "precios_descartados_por_atipicos": descartados,
+        "rango_confiable": {"min": database.PRECIO_M2_MINIMO, "max": database.PRECIO_M2_MAXIMO},
         "zonas": salida,
     }
 
