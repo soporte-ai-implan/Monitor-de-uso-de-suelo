@@ -90,12 +90,16 @@ def main() -> int:
         got = database.es_venta({"operacion": op})
         check(got == esperado, f"es_venta({op!r})", f"esperaba {esperado}, dio {got}")
 
+    # El piso es $10/m2, no $50, a propósito: el suelo rural grande vale poco
+    # por m2 y con $50 se tiraban predios ejidales legítimos. Los errores de
+    # captura los atrapa antes la compuerta de precio TOTAL (mínimo $50,000).
+    # Ver compuertas.py y tests/test_compuertas.py.
     print("\nDetección de precios atípicos (errores de captura del portal)")
     casos_ppm = [
         (8.02,     False, "el caso real: terreno de 561 m2 anunciado en $4,500"),
-        (13.48,    False, "otro con ceros faltantes"),
-        (49.99,    False, "justo abajo del mínimo"),
-        (50.0,     True,  "el mínimo exacto sí pasa"),
+        (9.99,     False, "justo abajo del mínimo"),
+        (10.0,     True,  "el mínimo exacto sí pasa"),
+        (43.0,     True,  "predio ejidal de 4.6 ha: barato por m2 pero legítimo"),
         (300.0,    True,  "predio rural barato, legítimo"),
         (4650.0,   True,  "precio urbano típico"),
         (27833.33, True,  "caro pero plausible en zona premium"),

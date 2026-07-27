@@ -36,11 +36,20 @@ def generar_datos(anuncios: list[dict], ultima_actualizacion: str | None = None)
     peticiones. La corrida diaria regenera este archivo y el HTML lo lee como
     <script src>, que funciona hasta en el hosting mas limitado y sin CORS.
     """
+    import compuertas
+
     WEB.mkdir(exist_ok=True)
     destino = WEB / "datos.js"
     payload = {
         "generado": ultima_actualizacion,
         "total": len(anuncios),
+        # Los umbrales viajan con los datos para que el dashboard no tenga su
+        # propia copia. Si el JS y el pipeline usan cortes distintos, la API y
+        # la pantalla reportan medianas distintas y nadie se entera.
+        "umbrales": {
+            "precio_m2_min": compuertas.PRECIO_M2_MIN,
+            "precio_m2_max": compuertas.PRECIO_M2_MAX,
+        },
         "terrenos": anuncios,
     }
     destino.write_text(

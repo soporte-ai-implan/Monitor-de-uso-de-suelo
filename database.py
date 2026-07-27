@@ -27,6 +27,7 @@ from typing import Any, Iterable
 
 from dotenv import load_dotenv
 
+import compuertas
 import zonas
 
 load_dotenv()
@@ -42,41 +43,12 @@ DATOS_DIR = pathlib.Path(os.getenv("DATOS_DIR", str(RAIZ))).expanduser()
 DATOS_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATOS_DIR / "terrenos.db"
 
-# Palabras que SI son terreno. Se compara normalizado contra tipo_propiedad,
-# titulo y ubicacion.
-PALABRAS_TERRENO = ("terreno", "lote", "predio", "parcela", "solar", "land")
-
-# Palabras que descalifican aunque digan "terreno" en algun lado
-# (ej. "casa con terreno amplio" no es una oferta de suelo).
-PALABRAS_EXCLUIR = (
-    "casa", "departamento", "depto", "bodega", "local", "oficina",
-    "edificio", "nave industrial", "quinta", "rancho con casa", "consultorio",
-)
-
-# Rango sensato de precio por m2 para el suelo en Torreon.
-#
-# No es censura de datos: es deteccion de errores de captura del portal. En la
-# primera corrida real aparecio "Terreno en Venta Residencial Las Quintas" a
-# $4,500 por 561 m2 -> $8.02/m2. Un terreno completo por $4,500 no existe; al
-# anunciante se le fueron los ceros. Un solo dato asi mueve el promedio de la
-# ciudad, y ese es el numero que mas se mira.
-#
-# Los anuncios fuera de rango NO se borran: se guardan y se cuentan, pero
-# quedan fuera de las estadisticas de precio. La cota baja deja pasar predios
-# rurales grandes, que legitimamente valen poco por m2.
-PRECIO_M2_MINIMO = 50.0
-PRECIO_M2_MAXIMO = 50_000.0
-
-
-def precio_m2_confiable(valor: Any) -> bool:
-    """Si el precio por m2 sirve para promediar, o es error de captura."""
-    if valor is None:
-        return False
-    try:
-        v = float(valor)
-    except (TypeError, ValueError):
-        return False
-    return PRECIO_M2_MINIMO <= v <= PRECIO_M2_MAXIMO
+# Las listas de palabras y los umbrales viven en compuertas.py, que es donde se
+# documentan y se miden contra datos reales.
+# Se reexportan aqui porque api.py y las pruebas ya los consumen por este nombre.
+PRECIO_M2_MINIMO = compuertas.PRECIO_M2_MIN
+PRECIO_M2_MAXIMO = compuertas.PRECIO_M2_MAX
+precio_m2_confiable = compuertas.precio_m2_confiable
 
 
 def conectar() -> sqlite3.Connection:
@@ -89,51 +61,37 @@ def conectar() -> sqlite3.Connection:
 # ---------- filtros ----------
 
 def es_terreno(a: dict) -> bool:
-    """Filtro de tipo de propiedad del lado del código."""
-    tipo = zonas.normalizar(a.get("tipo_propiedad"))
-    titulo = zonas.normalizar(a.get("titulo"))
-
-    # Si el portal ya dice explicitamente el tipo, ese manda.
-    if tipo:
-        if any(p in tipo for p in PALABRAS_TERRENO):
-            return True
-        if any(p in tipo for p in PALABRAS_EXCLUIR):
-            return False
-
-    if any(p in titulo for p in PALABRAS_EXCLUIR):
-        return False
-    return any(p in titulo for p in PALABRAS_TERRENO)
+    """Es oferta de suelo? La regla vive en compuertas.py."""
+    return compuertas._r_es_terreno(a) is None
 
 
 def es_venta(a: dict) -> bool:
     """Descarta rentas: el monitor es de oferta en venta."""
-    op = zonas.normalizar(a.get("operacion"))
-    if not op:
-        return True  # sin dato, se asume venta (la URL de busqueda ya filtra)
-    return "renta" not in op and "rent" not in op
+    return compuertas._r_es_venta(a) is None
 
 
 def filtrar(anuncios: list[dict]) -> tuple[list[dict], dict]:
-    """Aplica los filtros de código y regresa (validos, motivos_descarte)."""
-    validos: list[dict] = []
-    motivos = {"no_terreno": 0, "no_venta": 0, "fuera_de_zona": 0, "sin_precio": 0}
+    """
+    Aplica las compuertas de calidad. Regresa (validos, motivos_descarte).
 
-    for a in anuncios:
-        if not es_terreno(a):
-            motivos["no_terreno"] += 1
-            continue
-        if not es_venta(a):
-            motivos["no_venta"] += 1
-            continue
-        # 'fuera' incluye otro municipio y puntos lejos de toda zona.
-        if a.get("zona_estado") == "fuera" or a.get("zona") is None:
-            motivos["fuera_de_zona"] += 1
-            continue
-        if not a.get("precio"):
-            motivos["sin_precio"] += 1
-            continue
-        validos.append(a)
+    La lógica vive en compuertas.py, donde cada regla tiene nombre y cada
+    rechazo queda explicado. Aquí se conserva la forma del resultado que ya
+    esperaban main.py y las pruebas.
+    """
+    validos, rechazados, reporte = compuertas.filtrar(anuncios)
 
+    # Nombres viejos para no romper lo que ya los usa.
+    por_regla = reporte["por_regla"]
+    motivos = {
+        "no_terreno": por_regla.get("es_suelo", 0) + por_regla.get("identificador", 0),
+        "no_venta": por_regla.get("es_venta", 0),
+        "fuera_de_zona": por_regla.get("zona", 0),
+        "sin_precio": por_regla.get("precio", 0),
+        "superficie_implausible": por_regla.get("superficie", 0),
+        "precio_m2_implausible": por_regla.get("precio_m2", 0),
+        "_reporte": reporte,
+        "_rechazados": rechazados,
+    }
     return validos, motivos
 
 

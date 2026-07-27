@@ -93,6 +93,43 @@
   .celda-diag.ojo .n{color:var(--ambar)}
   .celda-diag.mal .n{color:var(--naranja)}
 
+  /* --- segmentos por tamaño --- */
+  .rejilla-segmentos{display:grid; grid-template-columns:repeat(auto-fit,minmax(178px,1fr)); gap:12px}
+  .segmento{border:1px solid var(--borde); border-radius:12px; padding:14px 15px; background:#FBF9F6; position:relative}
+  .segmento .s-nombre{font-family:'Archivo',sans-serif; font-weight:800; font-size:.86rem; margin-bottom:2px}
+  .segmento .s-rango{font-size:.7rem; color:var(--gris-claro); margin-bottom:10px}
+  .segmento .s-precio{font-family:'Archivo',sans-serif; font-weight:800; font-size:1.35rem; line-height:1}
+  .segmento .s-unidad{font-size:.72rem; color:var(--gris); margin-top:3px}
+  .segmento .s-n{
+    display:inline-block; margin-top:9px; font-size:.68rem; font-weight:700;
+    padding:2px 8px; border-radius:20px; background:#EFEAE2; color:var(--gris);
+  }
+  .segmento.pocos{border-style:dashed}
+  .segmento.pocos .s-n{background:#FDF3E0; color:#8A5A20}
+
+  /* --- gráficas --- */
+  .rejilla-graficas{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:20px; margin-top:16px}
+  .panel-grafica{border:1px solid var(--borde); border-radius:12px; padding:16px 18px; background:#fff}
+  .panel-grafica h3{margin-bottom:12px}
+  .lienzo{position:relative; height:240px}
+
+  /* --- tabla --- */
+  .envoltura-tabla{overflow-x:auto; border:1px solid var(--borde); border-radius:12px; margin-top:14px}
+  .tabla{width:100%; border-collapse:collapse; font-size:.82rem; min-width:720px}
+  .tabla th{
+    background:#FBF9F6; color:var(--gris-claro); font-weight:700; font-size:.68rem;
+    text-transform:uppercase; letter-spacing:.06em; padding:11px 13px;
+    text-align:left; border-bottom:1px solid var(--borde); white-space:nowrap;
+  }
+  .tabla td{padding:11px 13px; border-bottom:1px solid #F0EBE4; vertical-align:middle}
+  .tabla tbody tr:last-child td{border-bottom:0}
+  .tabla tbody tr:hover{background:#FBF9F6}
+  .tabla .der{text-align:right}
+  .tabla .punto-zona{display:inline-block; width:8px; height:8px; border-radius:50%; margin-right:6px; vertical-align:middle}
+  .tabla .liga-anuncio{color:var(--naranja); font-weight:700; text-decoration:none; white-space:nowrap}
+  .tabla .liga-anuncio:hover{text-decoration:underline}
+  .marca-aprox{font-size:.62rem; color:#8A5A20; background:#FDF3E0; border-radius:4px; padding:1px 5px; margin-left:5px}
+
   /* --- marcador con pulso, ciclo 1.8s --- */
   @keyframes pulsoAnillo{
     0%{transform:scale(.55); opacity:.65}
@@ -217,6 +254,69 @@
     <div class="leyenda" id="leyenda"></div>
   </section>
 
+  <section class="tarjeta-mapa">
+    <h2>Precio del suelo según el tamaño del predio</h2>
+    <p class="sutil" style="margin:5px 0 14px">
+      Una sola cifra para toda la oferta engaña a los dos extremos: el lote urbano
+      chico y el predio rústico no juegan en el mismo mercado.
+      <b>La <i>n</i> es el número de terrenos en cada segmento</b> — donde es baja,
+      la mediana se mueve con un solo anuncio nuevo.
+    </p>
+    <div class="rejilla-segmentos" id="rejilla-segmentos"></div>
+  </section>
+
+  <section class="tarjeta-mapa">
+    <h2>Un vistazo a la oferta actual</h2>
+    <div class="rejilla-graficas">
+      <div class="panel-grafica">
+        <h3>Precio mediano $/m² por zona</h3>
+        <div class="lienzo"><canvas id="gZonas"></canvas></div>
+      </div>
+      <div class="panel-grafica">
+        <h3>Distribución por tamaño de terreno</h3>
+        <div class="lienzo"><canvas id="gTamano"></canvas></div>
+      </div>
+      <div class="panel-grafica">
+        <h3>Antigüedad de la oferta</h3>
+        <p class="sutil" style="margin:-6px 0 10px">
+          Mes en que se publicó cada terreno que sigue en venta. Lo que lleva
+          meses sin colocarse es suelo que no se está moviendo.
+        </p>
+        <div class="lienzo"><canvas id="gAntiguedad"></canvas></div>
+      </div>
+      <div class="panel-grafica">
+        <h3>Oferta por portal</h3>
+        <div class="lienzo"><canvas id="gPortales"></canvas></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="tarjeta-mapa">
+    <div class="barra-mapa">
+      <div>
+        <h2>Base de datos de la oferta</h2>
+        <p class="sutil" style="margin:4px 0 0">
+          Los terrenos más recientes primero. Cada renglón liga al anuncio original.
+        </p>
+      </div>
+      <input type="search" id="buscador" placeholder="Buscar colonia o zona…"
+             style="padding:9px 13px;border:1px solid var(--borde);border-radius:9px;font-family:inherit;font-size:.82rem;min-width:220px">
+    </div>
+    <div class="envoltura-tabla">
+      <table class="tabla" id="tabla-terrenos">
+        <thead>
+          <tr>
+            <th>Colonia</th><th>Zona</th><th class="der">Superficie</th>
+            <th class="der">Precio</th><th class="der">$/m²</th>
+            <th>Publicado</th><th>Portal</th><th></th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+    <p class="sutil" id="pie-tabla" style="margin-top:12px"></p>
+  </section>
+
   <section class="diagnostico">
     <h3>Validación geográfica de los puntos</h3>
     <p class="sutil" style="margin:5px 0 0">
@@ -230,6 +330,7 @@
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="zonas.js"></script>
 <script src="puntos_demo.js"></script>
 <!-- datos.js lo genera cada corrida del pipeline. Si no existe todavia, el
@@ -288,9 +389,56 @@
   }
 
   /* ---------- capa de calor alimentada por puntos reales ---------- */
+  //
+  // Leaflet.heat truena con "getImageData: source width is 0" si se agrega
+  // cuando el contenedor del mapa aún mide 0 px: lee el tamaño del contenedor
+  // para crear su canvas. Es una carrera de tiempos, así que a veces pasa y a
+  // veces no — el peor tipo de falla, porque en producción sería intermitente.
+  // Por eso se espera a que el mapa tenga tamaño real antes de dibujar.
+  // Espera a que el contenedor del mapa tenga tamaño real y entonces ejecuta.
+  //
+  // No se usa requestAnimationFrame: se congela cuando la pestaña está en
+  // segundo plano, y ahí el reintento se queda esperando para siempre sin
+  // avisar. ResizeObserver sí dispara, y el intervalo queda de red de
+  // seguridad para navegadores viejos.
+  function cuandoElMapaMida(fn){
+    var caja = mapa.getContainer();
+    var listo = false;
+    function corre(){
+      if (listo) return;
+      if (!caja.clientWidth || !caja.clientHeight) return;
+      listo = true;
+      fn();
+    }
+    if (caja.clientWidth && caja.clientHeight) return fn();
+
+    var observador = null;
+    if (window.ResizeObserver) {
+      observador = new ResizeObserver(function(){
+        corre();
+        if (listo && observador) observador.disconnect();
+      });
+      observador.observe(caja);
+    }
+    var intentos = 0;
+    var reloj = setInterval(function(){
+      corre();
+      if (listo || ++intentos > 40) {
+        clearInterval(reloj);
+        if (observador) observador.disconnect();
+        if (!listo) console.warn('El mapa nunca tomó tamaño; se omite la capa de calor.');
+      }
+    }, 150);
+  }
+
   function dibujarCalor(puntos){
     capaCalor.clearLayers();
     if (!puntos.length) return;
+    cuandoElMapaMida(function(){ pintarCalor(puntos); });
+  }
+
+  function pintarCalor(puntos){
+    mapa.invalidateSize(false);
     // Peso por precio/m2: los predios mas caros pesan mas en la mancha de calor.
     //
     // La referencia es el percentil 90 de los precios confiables, no el maximo.
@@ -317,10 +465,16 @@
   }
 
   // Rango sensato para $/m² de suelo en Torreón. Fuera de esto es error de
-  // captura del portal, no un precio: en la primera corrida real había un
-  // terreno de 561 m² anunciado en $4,500 ($8/m²), y un solo dato así mueve
-  // el promedio de toda la ciudad. Espeja PRECIO_M2_MINIMO/MAXIMO de database.py.
-  var PPM_MIN = 50, PPM_MAX = 50000;
+  // captura del portal, no un precio.
+  //
+  // Los umbrales vienen del pipeline (datos.js) para que no existan dos copias
+  // que puedan desincronizarse: si el JS usara un corte distinto al de
+  // compuertas.py, la API y esta pantalla mostrarían medianas diferentes y
+  // nadie se enteraría. Los valores de respaldo son solo para cuando aún no
+  // hay corrida.
+  var UMBRALES = (window.DATOS_MONITOR && window.DATOS_MONITOR.umbrales) || {};
+  var PPM_MIN = UMBRALES.precio_m2_min != null ? UMBRALES.precio_m2_min : 10;
+  var PPM_MAX = UMBRALES.precio_m2_max != null ? UMBRALES.precio_m2_max : 50000;
   function ppmConfiable(v){ return v >= PPM_MIN && v <= PPM_MAX; }
 
   function mediana(valores){
@@ -457,6 +611,226 @@
     });
   }
 
+  /* ---------- segmentos por tamaño ---------- */
+  // Los cortes son provisionales: deberían ser los que IMPLAN ya usa por
+  // normativa, no los que se deducen de los datos. Espejan SEGMENTOS de api.py.
+  var SEGMENTOS = [
+    { nombre:'Lote chico',     rango:'menos de 300 m²',   lo:0,      hi:300 },
+    { nombre:'Lote medio',     rango:'300 a 600 m²',      lo:300,    hi:600 },
+    { nombre:'Lote grande',    rango:'600 a 1,500 m²',    lo:600,    hi:1500 },
+    { nombre:'Predio',         rango:'1,500 a 10,000 m²', lo:1500,   hi:10000 },
+    { nombre:'Rústico/ejidal', rango:'más de 10,000 m²',  lo:10000,  hi:Infinity }
+  ];
+
+  function pintarSegmentos(puntos){
+    var cont = document.getElementById('rejilla-segmentos');
+    cont.innerHTML = '';
+    SEGMENTOS.forEach(function(s){
+      var ppm = puntos.filter(function(p){
+        var m = Number(p.m2);
+        return m >= s.lo && m < s.hi && ppmConfiable(precioPorM2(p));
+      }).map(precioPorM2);
+
+      var pocos = ppm.length > 0 && ppm.length < 10;
+      var d = document.createElement('div');
+      d.className = 'segmento' + (pocos ? ' pocos' : '');
+      d.innerHTML =
+        '<div class="s-nombre">'+ s.nombre +'</div>' +
+        '<div class="s-rango">'+ s.rango +'</div>' +
+        '<div class="s-precio">'+ (ppm.length ? mxn(mediana(ppm)) : '—') +'</div>' +
+        '<div class="s-unidad">mediana por m²</div>' +
+        '<span class="s-n">n = '+ ppm.length + (pocos ? ' · muestra chica' : '') +'</span>';
+      cont.appendChild(d);
+    });
+  }
+
+  /* ---------- gráficas ---------- */
+  var graficas = {};
+
+  function baseChart(){
+    if (!window.Chart) return null;
+    Chart.defaults.font.family = "'Libre Franklin', system-ui, sans-serif";
+    Chart.defaults.color = '#5C554D';
+    return {
+      responsive:true, maintainAspectRatio:false,
+      plugins:{
+        legend:{ display:false },
+        tooltip:{
+          backgroundColor:'#171310', titleColor:'#fff', bodyColor:'#E8E2DC',
+          padding:11, cornerRadius:9, displayColors:false,
+          titleFont:{ family:'Archivo', weight:'700', size:12.5 }, bodyFont:{ size:12 }
+        }
+      },
+      scales:{
+        x:{ grid:{ display:false }, ticks:{ font:{ size:11 } } },
+        y:{ grid:{ color:'#EFEAE3' }, border:{ display:false }, ticks:{ font:{ size:11 } } }
+      }
+    };
+  }
+
+  function dibujar(id, config){
+    if (!window.Chart) return;
+    var el = document.getElementById(id);
+    if (!el) return;
+    if (graficas[id]) graficas[id].destroy();
+    graficas[id] = new Chart(el, config);
+  }
+
+  function pintarGraficas(puntos){
+    if (!window.Chart) { console.info('Chart.js no cargó; se omiten las gráficas.'); return; }
+    var opt = baseChart();
+
+    // 1) Precio mediano por zona
+    var zonasOrden = (window.TORREON_ZONAS.features || []).map(GeoZonas.nombreDe);
+    var etiquetas = [], valores = [], colores = [];
+    zonasOrden.forEach(function(z){
+      var ppm = puntos.filter(function(p){ return p.zona === z && ppmConfiable(precioPorM2(p)); })
+                      .map(precioPorM2);
+      if (!ppm.length) return;
+      etiquetas.push(z.replace(/^Zona \d+ - /, ''));
+      valores.push(Math.round(mediana(ppm)));
+      colores.push(GeoZonas.COLOR_ZONA[z] || '#8A8178');
+    });
+    dibujar('gZonas', {
+      type:'bar',
+      data:{ labels:etiquetas, datasets:[{ data:valores, backgroundColor:colores, borderRadius:6 }] },
+      options:Object.assign({}, opt, {
+        plugins:Object.assign({}, opt.plugins, {
+          tooltip:Object.assign({}, opt.plugins.tooltip, {
+            callbacks:{ label:function(c){ return mxn(c.parsed.y) + ' /m² (mediana)'; } }
+          })
+        }),
+        scales:Object.assign({}, opt.scales, {
+          y:Object.assign({}, opt.scales.y, {
+            ticks:{ font:{size:11}, callback:function(v){ return '$' + (v/1000) + 'k'; } }
+          })
+        })
+      })
+    });
+
+    // 2) Distribución por tamaño
+    var conteoSeg = SEGMENTOS.map(function(s){
+      return puntos.filter(function(p){
+        var m = Number(p.m2); return m >= s.lo && m < s.hi;
+      }).length;
+    });
+    dibujar('gTamano', {
+      type:'bar',
+      data:{
+        labels:SEGMENTOS.map(function(s){ return s.nombre; }),
+        datasets:[{ data:conteoSeg, backgroundColor:'#15467A', borderRadius:6 }]
+      },
+      options:Object.assign({}, opt, {
+        plugins:Object.assign({}, opt.plugins, {
+          tooltip:Object.assign({}, opt.plugins.tooltip, {
+            callbacks:{
+              title:function(c){ return SEGMENTOS[c[0].dataIndex].nombre; },
+              label:function(c){ return c.parsed.y + ' terrenos · ' + SEGMENTOS[c.dataIndex].rango; }
+            }
+          })
+        })
+      })
+    });
+
+    // 3) Antigüedad de la oferta, por mes de publicación
+    var porMes = {};
+    puntos.forEach(function(p){
+      var f = p.fecha_publicacion;
+      if (!f) return;
+      var mes = String(f).slice(0,7);
+      porMes[mes] = (porMes[mes] || 0) + 1;
+    });
+    var meses = Object.keys(porMes).sort();
+    var nombresMes = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    dibujar('gAntiguedad', {
+      type:'bar',
+      data:{
+        labels:meses.map(function(m){
+          var p = m.split('-');
+          return nombresMes[Number(p[1]) - 1] + ' ' + p[0].slice(2);
+        }),
+        datasets:[{
+          data:meses.map(function(m){ return porMes[m]; }),
+          // Lo viejo se pinta en naranja: es lo que lleva meses sin colocarse.
+          backgroundColor:meses.map(function(m, i){
+            return i < meses.length - 3 ? '#E95026' : '#C9BFB2';
+          }),
+          borderRadius:6
+        }]
+      },
+      options:Object.assign({}, opt, {
+        plugins:Object.assign({}, opt.plugins, {
+          tooltip:Object.assign({}, opt.plugins.tooltip, {
+            callbacks:{ label:function(c){ return c.parsed.y + ' terrenos publicados ese mes, aún en venta'; } }
+          })
+        })
+      })
+    });
+
+    // 4) Oferta por portal
+    var porPortal = {};
+    puntos.forEach(function(p){
+      var f = p.fuente || p.portal || 'sin dato';
+      porPortal[f] = (porPortal[f] || 0) + 1;
+    });
+    var portales = Object.keys(porPortal).sort(function(a,b){ return porPortal[b]-porPortal[a]; });
+    dibujar('gPortales', {
+      type:'bar',
+      data:{
+        labels:portales.map(function(p){ return p === 'inmuebles24' ? 'Inmuebles24' : p === 'pincali' ? 'Pincali' : p; }),
+        datasets:[{ data:portales.map(function(p){ return porPortal[p]; }),
+                    backgroundColor:['#E95026','#1A7A47','#8A8178'], borderRadius:6 }]
+      },
+      options:Object.assign({}, opt, { indexAxis:'y',
+        scales:{ x:{ grid:{ color:'#EFEAE3' }, border:{display:false} }, y:{ grid:{ display:false } } }
+      })
+    });
+  }
+
+  /* ---------- tabla ---------- */
+  var todosLosPuntos = [];
+
+  function pintarTabla(filtro){
+    var cuerpo = document.querySelector('#tabla-terrenos tbody');
+    var texto = (filtro || '').trim().toLowerCase();
+    var lista = todosLosPuntos.filter(function(p){
+      if (!texto) return true;
+      return ((p.nombre_colonia || '') + ' ' + (p.zona || '')).toLowerCase().indexOf(texto) !== -1;
+    });
+
+    lista.sort(function(a,b){
+      return String(b.fecha_publicacion || '').localeCompare(String(a.fecha_publicacion || ''));
+    });
+
+    var tope = lista.slice(0, 60);
+    cuerpo.innerHTML = tope.map(function(p){
+      var ppm = precioPorM2(p);
+      var color = p._color || '#8A8178';
+      var zonaCorta = (p.zona || '—').replace(/^Zona \d+ - /, '');
+      return '<tr>' +
+        '<td>' + (p.nombre_colonia || '—') +
+          (p.ubicacion_precisa === false ? '<span class="marca-aprox">ubicación aprox.</span>' : '') + '</td>' +
+        '<td><span class="punto-zona" style="background:'+color+'"></span>' + zonaCorta + '</td>' +
+        '<td class="der">' + (p.m2 ? num(p.m2) + ' m²' : '—') + '</td>' +
+        '<td class="der">' + (p.precio ? mxn(p.precio) : '—') + '</td>' +
+        '<td class="der">' + (ppm && ppmConfiable(ppm) ? mxn(ppm) : '—') + '</td>' +
+        '<td>' + (p.fecha_publicacion || '—') + '</td>' +
+        '<td>' + (p.fuente === 'inmuebles24' ? 'Inmuebles24' : p.fuente === 'pincali' ? 'Pincali' : (p.fuente || '—')) + '</td>' +
+        '<td>' + (p.url ? '<a class="liga-anuncio" href="'+p.url+'" target="_blank" rel="noopener noreferrer">Ver ↗</a>' : '') + '</td>' +
+      '</tr>';
+    }).join('');
+
+    document.getElementById('pie-tabla').textContent =
+      lista.length > tope.length
+        ? 'Mostrando ' + tope.length + ' de ' + lista.length + ' terrenos.'
+        : lista.length + ' terreno(s).';
+  }
+
+  var buscador = document.getElementById('buscador');
+  if (buscador) {
+    buscador.addEventListener('input', function(){ pintarTabla(buscador.value); });
+  }
+
   /* ---------- interruptores de capa ---------- */
   function conectarInterruptor(idSw, idLbl, capa){
     var sw = document.getElementById(idSw), lbl = document.getElementById(idLbl);
@@ -470,6 +844,36 @@
   conectarInterruptor('sw-puntos', 'lbl-puntos', capaPuntos);
 
   /* ---------- arranque ---------- */
+  // Cada bloque se dibuja por separado: si uno truena, los demás siguen. Un
+  // tablero a medias con un aviso es mejor que una página en blanco, y en
+  // producción nadie va a estar viendo la consola.
+  function intentar(nombre, fn){
+    try { fn(); }
+    catch (e) {
+      console.error('Falló el bloque "' + nombre + '":', e);
+      avisarFalla(nombre);
+    }
+  }
+
+  function avisarFalla(nombre){
+    var id = 'aviso-falla';
+    var caja = document.getElementById(id);
+    if (!caja) {
+      caja = document.createElement('div');
+      caja.id = id;
+      caja.style.cssText = 'background:#FDECEC;border:1px solid #F0C4C4;border-left:4px solid #C0392B;' +
+        'border-radius:10px;padding:12px 16px;font-size:.82rem;color:#7B2D26;margin-bottom:18px';
+      caja.innerHTML = '<b>Algunas secciones no se pudieron dibujar.</b> ' +
+        'Los datos son correctos; falló la presentación. Secciones afectadas: <span></span>';
+      var nota = document.getElementById('nota-alcance');
+      nota.parentNode.insertBefore(caja, nota);
+    }
+    var lista = caja.querySelector('span');
+    var previas = lista.textContent ? lista.textContent.split(', ') : [];
+    if (previas.indexOf(nombre) === -1) previas.push(nombre);
+    lista.textContent = previas.join(', ');
+  }
+
   function render(anuncios, origen, fecha){
     var r = GeoZonas.clasificarLista(anuncios, window.TORREON_ZONAS);
 
@@ -478,11 +882,17 @@
       if (p.zona) conteoPorZona[p.zona] = (conteoPorZona[p.zona] || 0) + 1;
     });
 
-    dibujarCalor(r.dibujables);
-    dibujarPuntos(r.dibujables);
-    dibujarLeyenda();
-    pintarKpis(r.dibujables, r.resumen);
-    pintarDiagnostico(r.resumen);
+    intentar('mapa de calor', function(){ dibujarCalor(r.dibujables); });
+    intentar('puntos del mapa', function(){ dibujarPuntos(r.dibujables); });
+    intentar('leyenda', function(){ dibujarLeyenda(); });
+    intentar('indicadores', function(){ pintarKpis(r.dibujables, r.resumen); });
+    intentar('validación', function(){ pintarDiagnostico(r.resumen); });
+    intentar('segmentos', function(){ pintarSegmentos(r.dibujables); });
+    intentar('gráficas', function(){ pintarGraficas(r.dibujables); });
+    intentar('tabla', function(){
+      todosLosPuntos = r.dibujables;
+      pintarTabla('');
+    });
 
     document.getElementById('sello-origen').textContent = origen;
     document.getElementById('sello-fecha').textContent = fechaLegible(fecha);

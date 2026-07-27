@@ -201,6 +201,23 @@ def _mediana(valores: list[float]) -> float | None:
     return round((v[n // 2 - 1] + v[n // 2]) / 2, 2)
 
 
+# Segmentos por superficie. Una sola mediana para toda la oferta le miente a los
+# dos extremos: medido sobre los 101 terrenos de la primera corrida, el lote
+# urbano chico vale 3.2 veces mas por m2 que el predio grande ($4,819 contra
+# $1,504). Un ejidatario que lea "$4,614/m2" creeria que su hectarea vale 46
+# millones.
+#
+# Los cortes son provisionales: deberian ser los que IMPLAN ya usa por
+# normativa o por tipo de uso de suelo, no los que se deducen de los datos.
+SEGMENTOS = [
+    ("Lote chico",     "menos de 300 m²",        0,       300),
+    ("Lote medio",     "300 a 600 m²",           300,     600),
+    ("Lote grande",    "600 a 1,500 m²",         600,     1_500),
+    ("Predio",         "1,500 a 10,000 m²",      1_500,   10_000),
+    ("Rústico/ejidal", "más de 10,000 m²",       10_000,  float("inf")),
+]
+
+
 @app.get("/api/resumen")
 def resumen():
     """
@@ -250,6 +267,27 @@ def resumen():
         if f.get("precio_m2") and not database.precio_m2_confiable(f.get("precio_m2"))
     )
 
+    # Desglose por tamaño: ver el comentario de SEGMENTOS.
+    por_segmento = []
+    for nombre, desc, lo, hi in SEGMENTOS:
+        en_seg = [
+            f for f in filas
+            if f.get("m2") and lo <= float(f["m2"]) < hi
+            and database.precio_m2_confiable(f.get("precio_m2"))
+        ]
+        ppm = [float(f["precio_m2"]) for f in en_seg]
+        por_segmento.append({
+            "segmento": nombre,
+            "descripcion": desc,
+            "n": len(en_seg),
+            "precio_m2_mediana": _mediana(ppm),
+            "precio_m2_minimo": round(min(ppm), 2) if ppm else None,
+            "precio_m2_maximo": round(max(ppm), 2) if ppm else None,
+            # Con pocas observaciones la mediana se mueve con un solo anuncio.
+            # Se marca para que el dashboard lo advierta y nadie la cite como censo.
+            "muestra_pequena": len(en_seg) < 10,
+        })
+
     return {
         "total_terrenos": len(filas),
         "precio_m2_mediana_ciudad": _mediana(todos),
@@ -257,6 +295,7 @@ def resumen():
         "precios_descartados_por_atipicos": descartados,
         "rango_confiable": {"min": database.PRECIO_M2_MINIMO, "max": database.PRECIO_M2_MAXIMO},
         "zonas": salida,
+        "segmentos": por_segmento,
     }
 
 
