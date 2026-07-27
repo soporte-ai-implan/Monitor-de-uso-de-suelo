@@ -25,3 +25,4 @@ desktop.ini
 .vscode/
 .idea/
 data/ultima_corrida_diagnostico.json
+web/datos.js

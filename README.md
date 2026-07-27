@@ -55,6 +55,7 @@ web/
   geo.js        lógica geoespacial del cliente
   zonas.js      geojson de zonas, generado
   puntos_demo.js  puntos de ejemplo, generado
+  datos.js      terrenos reales, lo regenera cada corrida (no va en git)
 
 data/
   torreon_zonas_final.geojson   5 zonas (SEPOMEX, fusionadas)
@@ -74,8 +75,9 @@ tools/
 
 Cada módulo tiene su documento con las decisiones técnicas y por qué se tomaron:
 
-- **[docs/despliegue.md](docs/despliegue.md)** — cómo dejarlo corriendo solo en
-  Railway. **Si vas a desplegar, empieza aquí.**
+- **[docs/despliegue_cpanel.md](docs/despliegue_cpanel.md)** — desplegar en el
+  hosting propio de IMPLAN. **Si vas a desplegar, empieza aquí.**
+- [docs/despliegue.md](docs/despliegue.md) — alternativa en Railway.
 - **[docs/mapa.md](docs/mapa.md)** — qué estaba mal en el mapa y cómo se corrigió.
 - [docs/scraper.md](docs/scraper.md) — Actores validados, schemas reales, por qué
   se descartó Vivanuncios.
@@ -128,9 +130,14 @@ Vivanuncios tachado; no se esconde la limitación.
 
 **Las 5 zonas no cubren el municipio completo.** Son la unión de colonias
 SEPOMEX, así que las áreas ejidales y rústicas quedan como huecos. Un terreno
-real de Torreón a más de 1.5 km de toda zona se descarta. Se cierra del todo
+real de Torreón a más de 3 km de toda zona se descarta. Se cierra del todo
 con el polígono oficial del municipio (Marco Geoestadístico del INEGI) — ver
 [docs/mapa.md](docs/mapa.md).
+
+**El municipio se decide por el texto, no por el campo `city`.** Inmuebles24
+recorre su jerarquía de ubicación: en 14 de 20 anuncios reales mandaba el estado
+en `city` y el municipio en `neighborhood`. Leer un solo campo tiraba 11 predios
+buenos de Torreón. Ver [docs/mapa.md](docs/mapa.md).
 
 **No se usa shapely ni geopandas a propósito.** El point-in-polygon está
 implementado a mano (~60 líneas en `zonas.py`) para que el pipeline instale sin

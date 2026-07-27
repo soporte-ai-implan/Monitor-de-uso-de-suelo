@@ -27,6 +27,31 @@ def escribir_js(destino: pathlib.Path, variable: str, datos, nota: str) -> None:
     print(f"  {destino.relative_to(RAIZ)}  ({destino.stat().st_size:,} bytes)")
 
 
+def generar_datos(anuncios: list[dict], ultima_actualizacion: str | None = None) -> pathlib.Path:
+    """
+    Escribe web/datos.js con los anuncios activos.
+
+    Es lo que permite que el dashboard viva en hosting compartido sin API: si
+    los datos cambian una vez al dia, no hace falta un servidor respondiendo
+    peticiones. La corrida diaria regenera este archivo y el HTML lo lee como
+    <script src>, que funciona hasta en el hosting mas limitado y sin CORS.
+    """
+    WEB.mkdir(exist_ok=True)
+    destino = WEB / "datos.js"
+    payload = {
+        "generado": ultima_actualizacion,
+        "total": len(anuncios),
+        "terrenos": anuncios,
+    }
+    destino.write_text(
+        "// GENERADO en cada corrida del pipeline - no editar a mano.\n"
+        "// Permite que el dashboard funcione sin API, en hosting estatico.\n"
+        f"window.DATOS_MONITOR = {json.dumps(payload, ensure_ascii=False, default=str)};\n",
+        encoding="utf-8",
+    )
+    return destino
+
+
 def main() -> None:
     WEB.mkdir(exist_ok=True)
     print("Generando assets web...")

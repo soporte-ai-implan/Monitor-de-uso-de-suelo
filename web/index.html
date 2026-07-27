@@ -232,6 +232,10 @@
 <script src="https://unpkg.com/leaflet.heat@0.2.0/dist/leaflet-heat.js"></script>
 <script src="zonas.js"></script>
 <script src="puntos_demo.js"></script>
+<!-- datos.js lo genera cada corrida del pipeline. Si no existe todavia, el
+     onerror evita el 404 ruidoso en consola y el dashboard cae a la API o a
+     los puntos de ejemplo. -->
+<script src="datos.js" onerror="console.info('Aún no hay datos.js: el pipeline no ha corrido.')"></script>
 <script src="geo.js"></script>
 <script>
 (function(){
@@ -247,6 +251,16 @@
 
   var mxn = function(v){ return '$' + Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };
   var num = function(v){ return Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };
+
+  // La fecha llega en ISO desde el pipeline; el dashboard es para el público,
+  // no para un log, así que se muestra en texto.
+  function fechaLegible(valor){
+    var d = valor ? new Date(valor) : new Date();
+    if (isNaN(d.getTime())) return String(valor);
+    var dia = d.toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' });
+    var hora = d.toLocaleTimeString('es-MX', { hour:'2-digit', minute:'2-digit' });
+    return dia + ', ' + hora;
+  }
 
   var mapa = L.map('mapa', { scrollWheelZoom:false, zoomControl:true });
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -446,8 +460,7 @@
     pintarDiagnostico(r.resumen);
 
     document.getElementById('sello-origen').textContent = origen;
-    document.getElementById('sello-fecha').textContent = fecha ||
-      new Date().toLocaleDateString('es-MX', { day:'2-digit', month:'long', year:'numeric' });
+    document.getElementById('sello-fecha').textContent = fechaLegible(fecha);
 
     if (r.resumen.fuera) {
       console.warn('Anuncios fuera de las 5 zonas (no dibujados):', r.descartados);
@@ -456,7 +469,25 @@
 
   dibujarZonas();
 
-  // Intenta la API; si no responde en 4s usa los puntos de ejemplo.
+  function conDatosReales(lista, origen, fecha){
+    document.getElementById('nota-datos').innerHTML =
+      'Datos <b>reales</b> del pipeline: ' + lista.length +
+      ' anuncios activos vía Inmuebles24 y Pincali.';
+    render(lista, origen, fecha);
+  }
+
+  // 1) datos.js — lo genera cada corrida del pipeline. Es la vía preferida:
+  //    funciona en hosting estático, sin API, sin puertos y sin CORS.
+  if (window.DATOS_MONITOR && (window.DATOS_MONITOR.terrenos || []).length) {
+    conDatosReales(
+      window.DATOS_MONITOR.terrenos,
+      'archivo del pipeline (datos reales)',
+      window.DATOS_MONITOR.generado
+    );
+    return;
+  }
+
+  // 2) Si no hay archivo, se intenta la API. 3) Si tampoco, puntos de ejemplo.
   var control = new AbortController();
   var reloj = setTimeout(function(){ control.abort(); }, 4000);
 
@@ -466,14 +497,12 @@
       clearTimeout(reloj);
       var lista = d.terrenos || [];
       if (!lista.length) throw new Error('la API respondió sin terrenos');
-      document.getElementById('nota-datos').innerHTML =
-        'Datos <b>reales</b> del pipeline: ' + lista.length + ' anuncios activos vía Inmuebles24 y Pincali.';
-      render(lista, 'API del pipeline (datos reales)', d.ultima_actualizacion);
+      conDatosReales(lista, 'API del pipeline (datos reales)', d.ultima_actualizacion);
     })
     .catch(function(err){
       clearTimeout(reloj);
-      console.info('API no disponible (' + err.message + '); usando puntos de ejemplo.');
-      render(window.PUNTOS_DEMO || [], 'puntos de ejemplo (API sin conectar)', null);
+      console.info('Sin datos.js ni API (' + err.message + '); usando puntos de ejemplo.');
+      render(window.PUNTOS_DEMO || [], 'puntos de ejemplo (sin datos del pipeline)', null);
     });
 
 })();

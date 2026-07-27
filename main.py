@@ -151,6 +151,20 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
               f"Bajas: {resumen['dados_de_baja']} · "
               f"Cambios de precio: {resumen['cambios_precio']}")
 
+        # Regenerar el dashboard estatico. Con esto el HTML no necesita API:
+        # basta subir la carpeta web/ a cualquier hosting.
+        try:
+            sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "tools"))
+            import generar_assets_web
+
+            activos = database.obtener_activos()
+            ruta = generar_assets_web.generar_datos(
+                activos, datetime.now().isoformat(timespec="seconds")
+            )
+            print(f"  Dashboard estático actualizado: {ruta.name} ({len(activos)} terrenos)")
+        except Exception as e:  # noqa: BLE001 - no debe tumbar la corrida
+            print(f"  Aviso: no pude regenerar el dashboard estático: {e}")
+
         estatus = "ok" if len(fuentes_ok) == 2 else "parcial"
         database.cerrar_corrida(
             id_corrida, estatus,
