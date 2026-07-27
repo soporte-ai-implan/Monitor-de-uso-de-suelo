@@ -69,6 +69,40 @@ come pedazos de Gómez Palacio o recorta Torreón real. Aquí hacía las dos cos
 etiqueta y se cuenta en el panel de validación; no se reubica. Mover un punto
 real es falsear el dato.
 
+### El guardián lee TODO el texto, no el campo `city`
+
+Esto se descubrió con datos reales y costó 11 anuncios buenos antes de detectarse.
+
+**Inmuebles24 recorre su jerarquía de ubicación** según el anuncio. Medido sobre
+20 anuncios reales de Torreón:
+
+| Cuántos | `city` | `neighborhood` |
+|---|---|---|
+| 6 | `Torreón` | *(la colonia)* |
+| **14** | **`Coahuila`** *(el estado)* | **`Torreón`** *(el municipio)* |
+
+La primera versión leía solo `city`, veía "Coahuila", y descartaba con el motivo
+*"municipio distinto a Torreón: Coahuila"*. Al reclasificar esos 13 rechazados
+ignorando el guardián, **11 caían dentro o al borde de una zona real**. De 20
+anuncios solo sobrevivían 2.
+
+La regla se invirtió: en vez de exigir que diga "Torreón" en un campo concreto,
+se juntan todos los textos de ubicación (ciudad, colonia, dirección, título) y
+**se descarta solo si aparece un municipio vecino con nombre propio** — Gómez
+Palacio, Lerdo, Matamoros, Viesca, San Pedro, Fco. I. Madero, o el estado de
+Durango. Un vecino nombrado gana sobre la mención de Torreón, porque *"a 10 min
+de Torreón, en Gómez Palacio"* es un anuncio de Gómez Palacio.
+
+Resultado sobre los mismos 20 anuncios: **de 2 válidos a 14**.
+
+### Por qué la tolerancia subió de 1.5 a 3.0 km
+
+Mientras la distancia era la única defensa contra Gómez Palacio, tenía que ser
+corta. Con el guardián por nombre haciendo ese trabajo, la distancia puede
+dedicarse a lo suyo: alcanzar la periferia rural de Torreón que las zonas
+SEPOMEX no cubren. Un predio real de Torreón a 2.29 km de toda zona se perdía
+con 1.5 km y se recupera con 3.0.
+
 ### Por qué el guardián de municipio es indispensable
 
 Medido contra este mismo geojson:
@@ -89,12 +123,26 @@ Ambos actores traen el campo: Inmuebles24 da `city` y `province`, Pincali da
 
 ## Limitaciones que quedan (honestas)
 
-1. **Anuncio sin campo de ciudad y a menos de 1.5 km del borde poniente**: se
-   dibujaría aunque fuera de Gómez Palacio. Mitigado porque ambos portales sí
-   traen ciudad; Nominatim da una segunda opinión cuando no.
-2. **Falso negativo rural**: un terreno real de Torreón a más de 1.5 km de toda
-   zona se descarta (las 5 zonas son unión de colonias SEPOMEX, no cubren el
-   municipio completo — las áreas ejidales quedan como huecos).
+1. **Anuncio sin una sola palabra de ubicación, con coordenadas en Gómez
+   Palacio**: se dibujaría como si fuera de Torreón (a 2.43 km del borde de
+   Zona 1, dentro de la tolerancia de 3.0 km). Mitigado porque ambos portales sí
+   mandan texto de ubicación en la práctica, y Nominatim rellena la ciudad
+   cuando falta. Está verificado como tal en `tests/test_zonas.py` (`CASO_LIMITE`):
+   si alguien cambia el umbral, la prueba avisa que este caso se movió.
+2. **Falso negativo rural**: un terreno real de Torreón a más de 3.0 km de toda
+   zona se descarta. En la corrida real fueron 2 de 20 (La Perla a 4.2 km y otro
+   a 4.6 km). Las 5 zonas son unión de colonias SEPOMEX y no cubren el municipio
+   completo: las áreas ejidales quedan como huecos.
+3. **Anuncios sin coordenadas ni dirección geocodificable**: 4 de 20 en la
+   corrida real. Traen colonia (`Fraccionamiento Los Viñedos`, `El Campanario`,
+   `Villas de Las Huertas`) pero ninguna de las palabras que `PISTAS_ZONA`
+   reconoce, así que tampoco entra el fallback por texto. Se pueden recuperar
+   agregando esos fraccionamientos a las pistas, o resolviéndolos con Nominatim.
+4. **Coordenadas repetidas**: en la corrida real, un mismo par de coordenadas
+   aparecía 4 veces (y otro 2). Son anuncios distintos, con id distinto —
+   probablemente lotes del mismo desarrollo — pero en el mapa se apilan en un
+   solo punto. No es un error de datos; es una decisión de presentación
+   pendiente (agrupar con un contador, o desplazarlos ligeramente).
 
 Las dos se cierran del todo con **el polígono oficial del municipio de Torreón**
 (Marco Geoestadístico del INEGI) como máscara: dentro del municipio se acepta,

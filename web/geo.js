@@ -25,21 +25,38 @@
   // Un punto fuera de todas las zonas pero a menos de esto se considera borde
   // de la mancha urbana (ejidos, rustico) y se asigna a la zona mas cercana.
   //
-  // OJO - por que 1.5 km y por que NO alcanza con la distancia:
-  // Torreon y Gomez Palacio son ciudades contiguas separadas por el Rio Nazas,
-  // asi que los rangos se traslapan y NINGUN umbral las separa. Medido contra
-  // este mismo geojson:
+  // Por que la distancia NO puede ser el guardian principal: Torreon y Gomez
+  // Palacio son contiguas, separadas por el Rio Nazas. Medido contra este
+  // mismo geojson:
   //     Gomez Palacio (col. Filadelfia)  -> 0.25 km del borde de Zona 1
-  //     Gomez Palacio centro             -> 2.43 km
   //     Torreon zona industrial oriente  -> 2.29 km  (legitimo)
-  // Es decir: hay puntos de Durango MAS CERCA que puntos validos de Torreon.
-  // Por eso el guardian principal es de atributo (municipio/estado del anuncio),
-  // no de geometria; la distancia solo resuelve el caso rural dentro de Torreon.
-  var TOLERANCIA_KM = 1.5;
+  // Hay puntos de Durango MAS CERCA que puntos validos de Torreon: los rangos
+  // se traslapan y ningun umbral los separa. Por eso el guardian principal es
+  // el nombre del municipio en el texto del anuncio, no la geometria.
+  //
+  // Con ese guardian puesto, la distancia si puede hacer su verdadero trabajo
+  // (alcanzar la periferia rural que las zonas SEPOMEX no cubren) y se subio
+  // de 1.5 a 3.0 km. Sobre 20 anuncios reales eso recupera predios legitimos
+  // a ~2 km sin dejar entrar nada de Durango.
+  var TOLERANCIA_KM = 3.0;
 
-  // Municipios que si pertenecen al monitor. Cualquier otro se descarta aunque
-  // caiga geometricamente cerca. Se compara normalizado (sin acentos, minusculas).
-  var MUNICIPIOS_VALIDOS = ['torreon'];
+  // Municipios vecinos. Si alguno aparece por su nombre en el texto de
+  // ubicacion, el anuncio NO es de Torreon y se descarta.
+  //
+  // La regla mira TODO el texto, no un solo campo: Inmuebles24 recorre su
+  // jerarquia de ubicacion segun el anuncio. Medido sobre 20 anuncios reales,
+  // 14 mandaban city='Coahuila' (el estado) y neighborhood='Torreón' (el
+  // municipio). Leer solo `city` los rechazaba a todos, y 11 de ellos caian
+  // dentro o al borde de una zona real.
+  var MUNICIPIOS_VECINOS = [
+    'gomez palacio', 'lerdo',
+    'matamoros', 'viesca', 'san pedro',
+    'francisco i madero', 'fco i madero',
+    // Torreon es Coahuila: si dice Durango, no es de aqui.
+    'durango'
+  ];
+
+  var MUNICIPIO_PROPIO = 'torreon';
 
   var KM_POR_GRADO_LAT = 111.32;
 
@@ -146,17 +163,29 @@
     return out.toLowerCase().trim();
   }
 
+  // Todos los campos con pistas de ubicacion de un anuncio, en un solo lugar.
+  function textosDe(a) {
+    return [a.ciudad || a.city, a.nombre_colonia, a.ubicacion, a.titulo];
+  }
+
   /**
-   * Guardian de municipio. Regresa true/false si el anuncio trae ciudad legible,
-   * o null si no hay dato (entonces decide la geometria).
+   * Guardian de municipio. Mira TODO el texto de ubicacion, no un solo campo.
+   * Regresa true (es de Torreon), false (es de otro municipio) o null (no hay
+   * forma de saberlo; que decida la geometria).
+   *
+   * Se descarta solo si aparece un municipio VECINO con nombre propio. Un
+   * vecino nombrado gana sobre la mencion de Torreon, porque "a 10 min de
+   * Torreon, en Gomez Palacio" es un anuncio de Gomez Palacio.
    */
-  function municipioValido(ciudad) {
-    var c = normalizar(ciudad);
-    if (!c) return null;
-    for (var i = 0; i < MUNICIPIOS_VALIDOS.length; i++) {
-      if (c.indexOf(MUNICIPIOS_VALIDOS[i]) !== -1) return true;
+  function municipioValido(textos) {
+    var lista = Array.isArray(textos) ? textos : [textos];
+    var blob = normalizar(lista.filter(Boolean).join(' | '));
+    if (!blob) return null;
+    for (var i = 0; i < MUNICIPIOS_VECINOS.length; i++) {
+      if (blob.indexOf(MUNICIPIOS_VECINOS[i]) !== -1) return false;
     }
-    return false;
+    if (blob.indexOf(MUNICIPIO_PROPIO) !== -1) return true;
+    return null;
   }
 
   /**
@@ -169,14 +198,20 @@
    *   estado 'borde'  -> fuera de todo pero a <= TOLERANCIA_KM, se asigna la mas cercana
    *   estado 'fuera'  -> otro municipio; NO se dibuja en el mapa
    */
-  function clasificar(lon, lat, geojson, ciudad) {
+  function clasificar(lon, lat, geojson, textos) {
     var fs = features(geojson);
 
     // Guardian de municipio antes que nada.
-    if (municipioValido(ciudad) === false) {
+    if (municipioValido(textos) === false) {
+      var lista = Array.isArray(textos) ? textos : [textos];
+      var blob = normalizar(lista.filter(Boolean).join(' '));
+      var vecino = 'otro municipio';
+      for (var v = 0; v < MUNICIPIOS_VECINOS.length; v++) {
+        if (blob.indexOf(MUNICIPIOS_VECINOS[v]) !== -1) { vecino = MUNICIPIOS_VECINOS[v]; break; }
+      }
       return {
         zona: null, color: '#8A8178', estado: 'fuera', distanciaKm: null,
-        motivo: 'municipio distinto a Torreón: ' + ciudad
+        motivo: 'el anuncio menciona ' + vecino + ', no Torreón'
       };
     }
 
@@ -229,10 +264,9 @@
         descartados.push(Object.assign({}, a, { _estado: 'sin_coords' }));
         return;
       }
-      var ciudad = a.ciudad || a.city || null;
-      var c = clasificar(lon, lat, geojson, ciudad);
+      var c = clasificar(lon, lat, geojson, textosDe(a));
       resumen[c.estado]++;
-      if (c.motivo && c.motivo.indexOf('municipio distinto') === 0) resumen.otroMunicipio++;
+      if (c.motivo && c.motivo.indexOf('el anuncio menciona') === 0) resumen.otroMunicipio++;
       var enriquecido = Object.assign({}, a, {
         lat: lat,
         lon: lon,
@@ -268,9 +302,10 @@
   global.GeoZonas = {
     COLOR_ZONA: COLOR_ZONA,
     TOLERANCIA_KM: TOLERANCIA_KM,
-    MUNICIPIOS_VALIDOS: MUNICIPIOS_VALIDOS,
+    MUNICIPIOS_VECINOS: MUNICIPIOS_VECINOS,
     normalizar: normalizar,
     municipioValido: municipioValido,
+    textosDe: textosDe,
     enGeometria: enGeometria,
     distanciaAGeometria: distanciaAGeometria,
     clasificar: clasificar,

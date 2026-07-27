@@ -173,16 +173,18 @@ class Geocodificador:
                 if not a.get("ciudad") and g.get("ciudad_nominatim"):
                     a["ciudad"] = g["ciudad_nominatim"]
 
-        # Clasificar lo que haya
+        # Clasificar lo que haya. Se pasan TODOS los campos de ubicacion, no
+        # solo `ciudad`: Inmuebles24 recorre su jerarquia y a veces manda el
+        # estado en `city` y el municipio en `neighborhood` (ver zonas.py).
         if lat is not None and lon is not None:
-            c = zonas.clasificar(lon, lat, a.get("ciudad"))
+            c = zonas.clasificar(lon, lat, *zonas.textos_de(a))
         else:
             c = {"zona": None, "estado": "sin_coords", "motivo": "sin coordenadas ni dirección geocodificable", "distancia_km": None}
 
         # 3) Fallback: punto dentro del poligono de la zona deducida del texto.
         #    Solo aplica si el anuncio SI es de Torreon; si es de otro municipio
         #    no se le invienta una ubicacion, se descarta.
-        if c["estado"] == "sin_coords" and zonas.municipio_valido(a.get("ciudad")) is not False:
+        if c["estado"] == "sin_coords" and zonas.municipio_valido(*zonas.textos_de(a)) is not False:
             zona_txt = self.zona_por_texto(a.get("ubicacion"), a.get("nombre_colonia"), a.get("titulo"))
             if zona_txt:
                 par = zonas.punto_aleatorio_en_zona(zona_txt, semilla=a.get("id_anuncio"))

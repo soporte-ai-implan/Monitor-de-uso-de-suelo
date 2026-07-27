@@ -32,9 +32,28 @@ COLOR_ZONA = {
     "Zona 5 - Sur Oriente": "#1A7A47",
 }
 
-TOLERANCIA_KM = 1.5
-MUNICIPIOS_VALIDOS = ("torreon",)
+# Se subio de 1.5 a 3.0 km una vez que el guardian empezo a descartar por
+# NOMBRE de municipio. Antes la distancia era la unica defensa contra Gomez
+# Palacio y habia que tenerla corta; ahora Gomez y Lerdo se frenan porque el
+# anuncio los menciona, asi que la distancia puede cubrir su verdadero trabajo:
+# alcanzar la periferia rural de Torreon que las zonas SEPOMEX no cubren.
+# Medido sobre 20 anuncios reales, esto recupera predios legitimos a ~2 km sin
+# dejar entrar nada de Durango.
+TOLERANCIA_KM = 3.0
 KM_POR_GRADO_LAT = 111.32
+
+# Municipios vecinos. Si alguno aparece por su nombre en el texto de ubicacion,
+# el anuncio NO es de Torreon y se descarta.
+MUNICIPIOS_VECINOS = (
+    "gomez palacio", "lerdo",            # Durango, del otro lado del Rio Nazas
+    "matamoros", "viesca", "san pedro",  # Coahuila, colindantes
+    "francisco i madero", "fco i madero",
+    # Torreon es Coahuila: si el anuncio dice Durango, no es de aqui. Atrapa
+    # los anuncios de Gomez o Lerdo que solo nombran el estado.
+    "durango",
+)
+
+MUNICIPIO_PROPIO = "torreon"
 
 _cache: dict | None = None
 
@@ -54,12 +73,36 @@ def normalizar(txt: Any) -> str:
     return "".join(c for c in s if not unicodedata.combining(c)).lower().strip()
 
 
-def municipio_valido(ciudad: Any) -> bool | None:
-    """True/False si hay dato legible, None si no hay dato."""
-    c = normalizar(ciudad)
-    if not c:
+def municipio_valido(*textos: Any) -> bool | None:
+    """
+    Decide si el anuncio es de Torreon mirando TODO el texto de ubicacion.
+
+    Regresa True (es de Torreon), False (es de otro municipio) o None (no hay
+    forma de saberlo; que decida la geometria).
+
+    Por que se miran varios campos y no solo `city`: Inmuebles24 recorre su
+    jerarquia de ubicacion segun el anuncio. Medido sobre 20 anuncios reales:
+
+        6 anuncios ->  city='Torreón'   neighborhood='<colonia>'   (bien)
+       14 anuncios ->  city='Coahuila'  neighborhood='Torreón'     (corrido)
+
+    Leer solo `city` rechazaba esos 14 por "municipio distinto: Coahuila", y al
+    reclasificarlos 11 caian dentro o al borde de una zona real. O sea, se
+    estaban tirando terrenos buenos de Torreon.
+
+    La regla se invierte respecto a la version anterior: en vez de exigir que
+    diga "Torreon", se descarta solo si aparece un municipio VECINO con nombre
+    propio. Un vecino nombrado gana sobre la mencion de Torreon, porque
+    "a 10 min de Torreon, en Gomez Palacio" es un anuncio de Gomez Palacio.
+    """
+    blob = normalizar(" | ".join(str(t) for t in textos if t))
+    if not blob:
         return None
-    return any(m in c for m in MUNICIPIOS_VALIDOS)
+    if any(v in blob for v in MUNICIPIOS_VECINOS):
+        return False
+    if MUNICIPIO_PROPIO in blob:
+        return True
+    return None
 
 
 # ---------- geometria ----------
@@ -129,18 +172,25 @@ def nombre_de(feature: dict) -> str:
 
 # ---------- clasificacion ----------
 
-def clasificar(lon: float, lat: float, ciudad: Any = None) -> dict:
+def clasificar(lon: float, lat: float, *textos_ubicacion: Any) -> dict:
     """
     Regresa {'zona', 'color', 'estado', 'distancia_km', 'motivo'}.
       'dentro' -> point-in-polygon exacto
       'borde'  -> fuera de todo pero a <= TOLERANCIA_KM; se asigna la mas cercana
       'fuera'  -> se descarta, no entra al mapa
+
+    `textos_ubicacion` son todos los campos con texto de ubicacion del anuncio
+    (ciudad, colonia, direccion, titulo). Ver municipio_valido() para el porque.
     """
-    if municipio_valido(ciudad) is False:
+    if municipio_valido(*textos_ubicacion) is False:
+        blob = " ".join(str(t) for t in textos_ubicacion if t)
+        vecino = next(
+            (v for v in MUNICIPIOS_VECINOS if v in normalizar(blob)), "otro municipio"
+        )
         return {
             "zona": None, "color": "#8A8178", "estado": "fuera",
             "distancia_km": None,
-            "motivo": f"municipio distinto a Torreón: {ciudad}",
+            "motivo": f"el anuncio menciona {vecino}, no Torreón",
         }
 
     features = cargar_zonas().get("features", [])
@@ -224,5 +274,15 @@ def resumen_lista(anuncios: Iterable[dict]) -> dict:
         if lat is None or lon is None:
             conteo["sin_coords"] += 1
             continue
-        conteo[clasificar(lon, lat, a.get("ciudad"))["estado"]] += 1
+        conteo[clasificar(lon, lat, *textos_de(a))["estado"]] += 1
     return conteo
+
+
+def textos_de(anuncio: dict) -> tuple:
+    """Todos los campos con pistas de ubicacion de un anuncio, en un solo lugar."""
+    return (
+        anuncio.get("ciudad"),
+        anuncio.get("nombre_colonia"),
+        anuncio.get("ubicacion"),
+        anuncio.get("titulo"),
+    )
