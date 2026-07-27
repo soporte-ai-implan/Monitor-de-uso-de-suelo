@@ -1,0 +1,179 @@
+# MUESTRA: Monitor de Terrenos IMPLAN — Pipeline Completo
+# Python + SQL (sin Java — ver nota al final sobre esta decisión)
+
+# ============================================================
+# 1. schema.sql — estructura de la base de datos
+# ============================================================
+"""
+CREATE TABLE IF NOT EXISTS anuncios (
+    id_anuncio TEXT PRIMARY KEY,
+    titulo TEXT NOT NULL,
+    precio REAL,
+    m2 REAL,
+    ubicacion TEXT,
+    lat REAL,
+    lon REAL,
+    url TEXT,
+    fecha_primera_vista DATE NOT NULL,
+    fecha_ultima_vista DATE NOT NULL,
+    activo BOOLEAN DEFAULT 1
+);
+"""
+
+# ============================================================
+# 2. scraper.py — trae los datos reales vía Apify
+# ============================================================
+import os
+from apify_client import ApifyClient
+from dotenv import load_dotenv
+
+load_dotenv()
+
+def obtener_anuncios_torreon():
+    """Corre el Actor de Apify y regresa la lista cruda de anuncios."""
+    client = ApifyClient(os.getenv("APIFY_TOKEN"))
+    actor_id = os.getenv("APIFY_ACTOR_ID")
+
+    run = client.actor(actor_id).call(
+        run_input={"startUrls": [os.getenv("URL_BUSQUEDA_TERRENOS")]}
+    )
+
+    if run["status"] != "SUCCEEDED":
+        raise RuntimeError(f"El Actor de Apify no terminó bien: {run['status']}")
+
+    items = client.dataset(run["defaultDatasetId"]).list_items().items
+    return items
+
+
+# ============================================================
+# 3. database.py — guarda, compara, detecta cambios
+# ============================================================
+import sqlite3
+from datetime import date
+
+DB_PATH = "terrenos.db"
+
+def conectar():
+    conn = sqlite3.connect(DB_PATH)
+    with open("schema.sql") as f:
+        conn.executescript(f.read())
+    return conn
+
+def guardar_anuncios(anuncios: list[dict]) -> dict:
+    """
+    Guarda los anuncios de la corrida actual.
+    Regresa un resumen: cuántos son nuevos, cuántos ya existían.
+    """
+    conn = conectar()
+    hoy = date.today().isoformat()
+    nuevos, actualizados = 0, 0
+    ids_vistos_hoy = []
+
+    for a in anuncios:
+        id_anuncio = a["postingId"]
+        ids_vistos_hoy.append(id_anuncio)
+
+        existe = conn.execute(
+            "SELECT 1 FROM anuncios WHERE id_anuncio = ?", (id_anuncio,)
+        ).fetchone()
+
+        if existe:
+            conn.execute(
+                "UPDATE anuncios SET fecha_ultima_vista = ?, precio = ?, activo = 1 WHERE id_anuncio = ?",
+                (hoy, a.get("price"), id_anuncio)
+            )
+            actualizados += 1
+        else:
+            conn.execute(
+                """INSERT INTO anuncios
+                   (id_anuncio, titulo, precio, m2, ubicacion, lat, lon, url,
+                    fecha_primera_vista, fecha_ultima_vista, activo)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)""",
+                (id_anuncio, a["title"], a.get("price"), a.get("surface"),
+                 a.get("location"), a.get("lat"), a.get("lon"), a.get("url"),
+                 hoy, hoy)
+            )
+            nuevos += 1
+
+    # marcar como inactivos los que ya no aparecieron hoy
+    placeholders = ",".join("?" * len(ids_vistos_hoy))
+    conn.execute(
+        f"UPDATE anuncios SET activo = 0 WHERE id_anuncio NOT IN ({placeholders})",
+        ids_vistos_hoy
+    )
+
+    conn.commit()
+    conn.close()
+    return {"nuevos": nuevos, "actualizados": actualizados, "fecha": hoy}
+
+
+# ============================================================
+# 4. api.py — sirve los datos a trcimplan.gob.mx
+# ============================================================
+from fastapi import FastAPI
+import sqlite3
+
+app = FastAPI(title="API Monitor Terrenos IMPLAN")
+
+@app.get("/api/monitor-terrenos")
+def obtener_terrenos():
+    conn = sqlite3.connect("terrenos.db")
+    conn.row_factory = sqlite3.Row
+    filas = conn.execute(
+        "SELECT * FROM anuncios WHERE activo = 1 ORDER BY fecha_primera_vista DESC"
+    ).fetchall()
+    conn.close()
+
+    return {
+        "total": len(filas),
+        "ultima_actualizacion": filas[0]["fecha_ultima_vista"] if filas else None,
+        "terrenos": [dict(f) for f in filas]
+    }
+
+
+# ============================================================
+# 5. main.py — orquesta las 3 piezas (lo que dispara el scheduler)
+# ============================================================
+def correr_monitor_semanal():
+    print("Extrayendo anuncios de Apify...")
+    anuncios = obtener_anuncios_torreon()
+
+    print(f"Se encontraron {len(anuncios)} anuncios activos. Guardando...")
+    resumen = guardar_anuncios(anuncios)
+
+    print(f"Listo — {resumen['nuevos']} nuevos, {resumen['actualizados']} actualizados.")
+    return resumen
+
+if __name__ == "__main__":
+    correr_monitor_semanal()
+
+
+# ============================================================
+# 6. HTML — cómo el sitio consume la API (JavaScript simple)
+# ============================================================
+"""
+<script>
+fetch('https://tu-api.trcimplan.gob.mx/api/monitor-terrenos')
+  .then(r => r.json())
+  .then(data => {
+    document.getElementById('total-terrenos').textContent = data.total;
+    data.terrenos.forEach(t => {
+      // insertar cada terreno en la tabla/tarjetas del HTML
+    });
+  });
+</script>
+"""
+
+# ============================================================
+# NOTA sobre la elección de lenguaje
+# ============================================================
+"""
+Se usó Python + SQL, no Java, porque:
+1. Es el estándar del ecosistema para scraping + APIs ligeras (menos código,
+   librerías maduras: apify-client, FastAPI, sqlite3 nativo).
+2. El código debe ser legible por cualquier programador, no solo por quien
+   ya sabe el lenguaje — Python es de los más legibles para eso.
+3. Si más adelante Víctor decide que la API debe vivir en un stack Java
+   existente de IMPLAN, ese endpoint (api.py) es la pieza más fácil de
+   reescribir — el resto del pipeline (scraper, SQL) no necesita cambiar.
+"""
