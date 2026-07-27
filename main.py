@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import pathlib
 import sys
 import traceback
 from datetime import datetime
@@ -22,6 +23,65 @@ from datetime import datetime
 import database
 import geocoding
 import scraper
+
+
+def _diagnostico_descartes(anuncios: list[dict]) -> None:
+    """
+    Explica por qué se descartó cada anuncio fuera de zona, y guarda el detalle
+    para poder revisarlo sin volver a gastar crédito de Apify.
+    """
+    fuera = [a for a in anuncios if a.get("zona_estado") in ("fuera", "sin_coords")]
+    if not fuera:
+        return
+
+    por_municipio, por_distancia, sin_coords = [], [], []
+    for a in fuera:
+        motivo = a.get("zona_motivo") or ""
+        if motivo.startswith("municipio distinto"):
+            por_municipio.append(a)
+        elif a.get("zona_estado") == "sin_coords":
+            sin_coords.append(a)
+        else:
+            por_distancia.append(a)
+
+    print(f"\n  --- por qué se descartaron {len(fuera)} anuncios ---")
+
+    if por_municipio:
+        ciudades: dict[str, int] = {}
+        for a in por_municipio:
+            c = a.get("ciudad") or "(sin dato)"
+            ciudades[c] = ciudades.get(c, 0) + 1
+        detalle = ", ".join(f"{c}: {n}" for c, n in sorted(ciudades.items(), key=lambda x: -x[1]))
+        print(f"  {len(por_municipio):3d} de otro municipio  ->  {detalle}")
+        print("      (esto es correcto: el portal devuelve toda la Comarca Lagunera)")
+
+    if por_distancia:
+        print(f"  {len(por_distancia):3d} dentro de Torreón pero lejos de toda zona:")
+        for a in por_distancia[:12]:
+            d = a.get("zona_motivo", "")
+            ciudad = a.get("ciudad") or "?"
+            col = a.get("nombre_colonia") or a.get("ubicacion") or "?"
+            print(f"        [{ciudad}] {str(col)[:46]:<46} {d}")
+        if len(por_distancia) > 12:
+            print(f"        ... y {len(por_distancia) - 12} más")
+        print("      (OJO: si estos son terrenos reales de Torreón, los polígonos")
+        print("       se están quedando cortos y hay que revisarlos)")
+
+    if sin_coords:
+        print(f"  {len(sin_coords):3d} sin coordenadas ni dirección geocodificable:")
+        for a in sin_coords[:5]:
+            print(f"        {str(a.get('titulo'))[:60]}")
+
+    # Guardar todo para analizarlo sin volver a correr los Actores
+    destino = pathlib.Path(__file__).resolve().parent / "data" / "ultima_corrida_diagnostico.json"
+    try:
+        destino.write_text(
+            json.dumps(anuncios, ensure_ascii=False, indent=1, default=str), encoding="utf-8"
+        )
+        print(f"\n  Detalle completo guardado en {destino.name} "
+              f"({len(anuncios)} anuncios) — se puede revisar sin volver a gastar crédito.")
+    except OSError as e:
+        print(f"  No pude guardar el diagnóstico: {e}")
 
 
 def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dict:
@@ -64,6 +124,12 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
         for a in enriquecidos:
             conteo_zonas[a.get("zona_estado")] = conteo_zonas.get(a.get("zona_estado"), 0) + 1
         print(f"  Validación geográfica: {conteo_zonas}")
+
+        # Desglose de POR QUE se descarto cada uno. Sin esto no se distingue
+        # "el portal nos manda anuncios de Gomez Palacio" (correcto descartarlos)
+        # de "nuestros poligonos no cubren zona ejidal de Torreon" (estamos
+        # tirando datos buenos). Son problemas opuestos con arreglos opuestos.
+        _diagnostico_descartes(enriquecidos)
 
         # 3) Filtros y persistencia
         print("\n[3/3] Filtrando y guardando...")

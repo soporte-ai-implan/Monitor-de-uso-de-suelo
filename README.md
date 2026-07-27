@@ -74,8 +74,9 @@ tools/
 
 Cada módulo tiene su documento con las decisiones técnicas y por qué se tomaron:
 
+- **[docs/despliegue.md](docs/despliegue.md)** — cómo dejarlo corriendo solo en
+  Railway. **Si vas a desplegar, empieza aquí.**
 - **[docs/mapa.md](docs/mapa.md)** — qué estaba mal en el mapa y cómo se corrigió.
-  **Empieza por aquí.**
 - [docs/scraper.md](docs/scraper.md) — Actores validados, schemas reales, por qué
   se descartó Vivanuncios.
 - [docs/geocoding.md](docs/geocoding.md) — orden de preferencia de coordenadas,

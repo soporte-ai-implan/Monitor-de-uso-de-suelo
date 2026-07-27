@@ -237,8 +237,13 @@
 (function(){
   'use strict';
 
-  // Si la API esta arriba usa datos reales; si no, cae a los puntos de ejemplo.
-  var API = (window.MONITOR_API_URL || 'http://localhost:8000');
+  // De donde salen los datos:
+  //   1. window.MONITOR_API_URL, si alguien la define a mano
+  //   2. el mismo origen, cuando la API sirve este HTML (el caso en Railway)
+  //   3. localhost:8000, cuando se abre el archivo con doble clic en desarrollo
+  // Si nada responde, cae a los puntos de ejemplo y lo dice en pantalla.
+  var API = window.MONITOR_API_URL ||
+            (location.protocol === 'file:' ? 'http://localhost:8000' : '');
 
   var mxn = function(v){ return '$' + Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };
   var num = function(v){ return Number(v).toLocaleString('es-MX', {maximumFractionDigits:0}); };

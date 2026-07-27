@@ -28,9 +28,27 @@ def main() -> int:
     c = TestClient(api.app)
 
     print("Endpoints responden")
-    for ruta in ["/", "/salud", "/api/monitor-terrenos", "/api/zonas", "/api/resumen", "/api/corridas"]:
+    for ruta in ["/", "/api", "/salud", "/api/monitor-terrenos", "/api/zonas", "/api/resumen", "/api/corridas"]:
         r = c.get(ruta)
         check(r.status_code == 200, f"GET {ruta}", f"HTTP {r.status_code}")
+
+    print("\nEl dashboard se sirve desde el mismo servicio (adiós CORS)")
+    raiz = c.get("/")
+    check("text/html" in raiz.headers.get("content-type", ""),
+          "GET / devuelve HTML, no JSON", raiz.headers.get("content-type", ""))
+    check("Monitor de Suelo" in raiz.text, "el HTML es el dashboard")
+    for asset in ["/geo.js", "/zonas.js", "/puntos_demo.js"]:
+        r = c.get(asset)
+        check(r.status_code == 200, f"sirve {asset}", f"HTTP {r.status_code}")
+    z = c.get("/zonas.js")
+    check("TORREON_ZONAS" in z.text, "zonas.js trae la variable esperada")
+    check(c.get("/api").json().get("servicio") is not None,
+          "el índice JSON se movió a /api y sigue vivo")
+
+    print("\nEl scheduler integrado viene apagado por omisión")
+    check(api.SCHEDULER_EN_API is False,
+          "SCHEDULER_EN_API apagado si no se define",
+          "si estuviera prendido, levantar la API en local pondría a scrapear")
 
     print("\nForma de la respuesta que consume el mapa")
     d = c.get("/api/monitor-terrenos").json()

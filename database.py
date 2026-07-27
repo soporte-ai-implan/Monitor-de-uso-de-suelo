@@ -19,16 +19,28 @@ en el filtro del Actor.
 from __future__ import annotations
 
 import json
+import os
 import pathlib
 import sqlite3
 from datetime import date, datetime
 from typing import Any, Iterable
 
+from dotenv import load_dotenv
+
 import zonas
 
+load_dotenv()
+
 RAIZ = pathlib.Path(__file__).resolve().parent
-DB_PATH = RAIZ / "terrenos.db"
 SCHEMA_PATH = RAIZ / "schema.sql"
+
+# DATOS_DIR permite mover la base a un volumen persistente. Es indispensable en
+# Railway o cualquier contenedor: el disco normal es efimero y cada redeploy
+# borraria terrenos.db, y con ella el historial que sostiene la deteccion de
+# altas y bajas. Sin historial, cada corrida se veria como si todo fuera nuevo.
+DATOS_DIR = pathlib.Path(os.getenv("DATOS_DIR", str(RAIZ))).expanduser()
+DATOS_DIR.mkdir(parents=True, exist_ok=True)
+DB_PATH = DATOS_DIR / "terrenos.db"
 
 # Palabras que SI son terreno. Se compara normalizado contra tipo_propiedad,
 # titulo y ubicacion.

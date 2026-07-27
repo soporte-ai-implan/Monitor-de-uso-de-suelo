@@ -9,14 +9,18 @@ Arrancar:  uvicorn api:app --reload --port 8000
 """
 from __future__ import annotations
 
+import asyncio
+import contextlib
 import json
+import logging
 import os
 import pathlib
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 import database
 import zonas
@@ -24,11 +28,65 @@ import zonas
 load_dotenv()
 
 RAIZ = pathlib.Path(__file__).resolve().parent
+WEB = RAIZ / "web"
+
+log = logging.getLogger("monitor.api")
+
+# En un contenedor (Railway) conviene un solo servicio con la API y el
+# scheduler adentro: un volumen persistente no se puede compartir entre dos
+# servicios, y la base tiene que ser la misma para ambos.
+SCHEDULER_EN_API = os.getenv("SCHEDULER_EN_API", "0") == "1"
+INTERVALO_HORAS = float(os.getenv("INTERVALO_HORAS", "24"))
+
+
+@contextlib.asynccontextmanager
+async def ciclo_de_vida(app: FastAPI):
+    tarea = None
+    if SCHEDULER_EN_API:
+        tarea = asyncio.create_task(_bucle_corridas())
+        log.info("scheduler integrado activo: cada %s horas", INTERVALO_HORAS)
+    else:
+        log.info("scheduler integrado apagado (SCHEDULER_EN_API != 1)")
+    try:
+        yield
+    finally:
+        if tarea:
+            tarea.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await tarea
+
+
+async def _bucle_corridas() -> None:
+    """
+    Corre el pipeline cada INTERVALO_HORAS sin tumbar la API si algo falla.
+
+    Se ejecuta en un hilo aparte porque el pipeline es bloqueante (red, SQLite)
+    y si corriera en el bucle de eventos dejaria la API sin responder por
+    minutos, justo mientras alguien mira el dashboard.
+    """
+    import main as pipeline
+
+    # Espera inicial: que la API quede lista antes de la primera corrida.
+    await asyncio.sleep(30)
+    while True:
+        try:
+            log.info("disparando corrida programada")
+            r = await asyncio.to_thread(pipeline.correr_monitor)
+            log.info("corrida '%s' terminada", r.get("estatus"))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # Una corrida fallida no debe tumbar el servicio: queda registrada
+            # en la tabla `corridas` y se reintenta en el siguiente turno.
+            log.exception("la corrida falló; el servicio sigue arriba")
+        await asyncio.sleep(INTERVALO_HORAS * 3600)
+
 
 app = FastAPI(
     title="API Monitor de Suelo — IMPLAN Torreón",
     description="Oferta de terrenos en venta en Torreón, vía Inmuebles24 y Pincali.",
     version="1.0.0",
+    lifespan=ciclo_de_vida,
 )
 
 # En produccion conviene acotar a los dominios reales; se deja configurable.
@@ -43,8 +101,8 @@ app.add_middleware(
 )
 
 
-@app.get("/")
-def raiz():
+@app.get("/api")
+def indice_api():
     return {
         "servicio": "Monitor de Suelo IMPLAN Torreón",
         "endpoints": [
@@ -148,3 +206,23 @@ def corridas(limite: int = 20):
                 pass
         salida.append(d)
     return {"total": len(salida), "corridas": salida}
+
+
+# El dashboard se sirve desde ESTE mismo servicio, no aparte. Al quedar en el
+# mismo origen que /api, el navegador ya no aplica CORS al fetch() y se acaban
+# de tajo los problemas de puertos, dominios y encabezados. El middleware de
+# CORS se queda de todos modos, por si algun dia el HTML se sirve desde otro
+# lado.
+#
+# Va al final a proposito: un mount en "/" atrapa todo lo que no empato antes,
+# asi que tiene que declararse despues de las rutas /api y /salud.
+if WEB.is_dir():
+    @app.get("/", include_in_schema=False)
+    def dashboard():
+        return FileResponse(WEB / "index.html")
+
+    app.mount("/", StaticFiles(directory=WEB, html=True), name="dashboard")
+else:  # pragma: no cover - solo si alguien borra web/
+    @app.get("/", include_in_schema=False)
+    def sin_dashboard():
+        return {"error": "No se encontró la carpeta web/ con el dashboard."}

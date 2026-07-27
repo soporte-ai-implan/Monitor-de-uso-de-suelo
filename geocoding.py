@@ -35,7 +35,12 @@ USER_AGENT = f"MonitorSueloIMPLAN/1.0 ({CONTACTO})"
 ESPERA_SEG = 1.1
 TIMEOUT_SEG = 12
 
-CACHE_PATH = pathlib.Path(__file__).resolve().parent / "data" / "cache_geocoding.json"
+# El cache va junto a la base, en el volumen persistente: si se pierde en cada
+# redeploy volveriamos a pedirle a Nominatim direcciones ya resueltas, a 1
+# peticion por segundo, y ese es justo el uso que hace que te bloqueen.
+CACHE_PATH = pathlib.Path(
+    os.getenv("DATOS_DIR", str(pathlib.Path(__file__).resolve().parent / "data"))
+) / "cache_geocoding.json"
 
 # Pistas de texto -> zona, para el fallback cuando no hay coordenadas.
 # Se revisan en orden; la primera que aparezca en la direccion gana.
