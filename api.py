@@ -155,6 +155,38 @@ def indice_api():
     }
 
 
+def _version_desplegada() -> dict:
+    """
+    Que codigo esta corriendo realmente.
+
+    Sin esto hay que adivinar: se pierde tiempo revisando si tal endpoint ya
+    responde tal campo para deducir la version. Railway publica el commit en
+    RAILWAY_GIT_COMMIT_SHA; en local se lee de git.
+    """
+    sha = (
+        os.getenv("RAILWAY_GIT_COMMIT_SHA")
+        or os.getenv("SOURCE_COMMIT")
+        or os.getenv("GIT_COMMIT")
+    )
+    if not sha:
+        try:
+            import subprocess
+
+            sha = subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=RAIZ, capture_output=True, text=True, timeout=3,
+            ).stdout.strip() or None
+        except Exception:  # noqa: BLE001 - es informativo, no debe tumbar /salud
+            sha = None
+
+    return {
+        "commit": (sha or "desconocido")[:7],
+        "mensaje_commit": os.getenv("RAILWAY_GIT_COMMIT_MESSAGE"),
+        "rama": os.getenv("RAILWAY_GIT_BRANCH"),
+        "desplegado": os.getenv("RAILWAY_DEPLOYMENT_ID"),
+    }
+
+
 @app.get("/salud")
 def salud():
     """Para que el scheduler o un uptime check sepan si la API responde."""
@@ -163,6 +195,7 @@ def salud():
         "ok": True,
         "ultima_corrida": corrida["fin"] if corrida else None,
         "estatus_ultima_corrida": corrida["estatus"] if corrida else "sin corridas",
+        "version": _version_desplegada(),
     }
 
 
