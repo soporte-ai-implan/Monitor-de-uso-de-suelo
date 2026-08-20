@@ -76,6 +76,16 @@
   }
   function corta(z) { return String(z || '').replace(/^Zona \d+ - /, ''); }
 
+  // Los avisos se cuelgan bajo los KPIs: son advertencias sobre esas cifras,
+  // así que tienen que leerse antes de creerles. Antes se anclaban al bloque
+  // .aviso de la cabecera, que ahora vive dentro del pipeline.
+  function colgarAviso(c) {
+    var ref = document.querySelector('main .kpis');
+    if (ref && ref.parentNode) { ref.parentNode.insertBefore(c, ref.nextSibling); return; }
+    var m = document.querySelector('main');
+    if (m) m.insertBefore(c, m.firstChild);
+  }
+
   // Cada bloque se dibuja por separado: si uno truena, los demás siguen.
   function intentar(nombre, fn) {
     try { fn(); } catch (e) { console.error('Falló "' + nombre + '":', e); avisar(nombre); }
@@ -89,8 +99,7 @@
       c.style.cssText = 'background:#FDECEC;border-color:#F0C4C4;border-left-color:#C0392B;color:#7B2D26';
       c.innerHTML = '<b>Algunas secciones no se pudieron dibujar.</b> Los datos son correctos; ' +
                     'falló la presentación. Secciones: <span></span>';
-      var ref = document.querySelector('main .aviso');
-      ref.parentNode.insertBefore(c, ref);
+      colgarAviso(c);
     }
     var s = c.querySelector('span');
     var v = s.textContent ? s.textContent.split(', ') : [];
@@ -119,8 +128,7 @@
       c.id = 'aviso-fuentes';
       c.className = 'aviso';
       c.style.cssText = 'background:#FFF6E5;border-color:#EFD9AE;border-left-color:#C6881E;color:#7A5410';
-      var ref = document.querySelector('main .aviso');
-      ref.parentNode.insertBefore(c, ref);
+      colgarAviso(c);
     }
     c.innerHTML = '<b>Cobertura incompleta en esta corrida.</b> ' +
       (caidas.length === 1 ? 'El portal ' : 'Los portales ') + caidas.join(' y ') +
@@ -301,22 +309,22 @@
       : 'mediana de la oferta activa';
   }
 
+  // Las cifras de validacion ya no viven en tarjetas aparte: van dentro del
+  // paso del pipeline que las produce, que es donde se entienden.
   function pintarDiagnostico(r) {
-    var celdas = [
-      { t: 'Dentro de una zona urbana', n: r.dentro, c: 'bien' },
-      { t: 'Absorbidos por la zona más cercana', n: r.borde, c: 'ojo' },
-      { t: 'En la Periferia Sur', n: r.periferia || 0, c: 'ojo' },
-      { t: 'Descartados: fuera del municipio', n: r.fuera, c: 'mal' },
-      { t: 'Sin coordenadas', n: r.sinCoords, c: 'mal' }
-    ];
     var c = document.getElementById('diagnostico');
-    c.innerHTML = '';
-    celdas.forEach(function (x) {
-      var d = document.createElement('div');
-      d.className = 'd-cel ' + x.c;
-      d.innerHTML = '<div class="n">' + x.n + '</div><div class="t">' + x.t + '</div>';
-      c.appendChild(d);
-    });
+    if (!c) return;
+    var ubicados = (r.dentro || 0) + (r.borde || 0) + (r.periferia || 0);
+    var partes = [];
+    partes.push('<b>' + num(r.dentro || 0) + '</b> caen dentro de una zona urbana');
+    if (r.borde) partes.push('<b>' + num(r.borde) + '</b> los absorbe la zona más cercana');
+    if (r.periferia) partes.push('<b>' + num(r.periferia) + '</b> quedan en la Periferia Sur');
+    var t = 'De ' + num(ubicados + (r.fuera || 0) + (r.sinCoords || 0)) + ' anuncios procesados: ' +
+            partes.join('; ') + '.';
+    if (r.fuera) t += ' <b>' + num(r.fuera) + '</b> se descarta(n) por caer fuera del municipio.';
+    if (r.sinCoords) t += ' <b>' + num(r.sinCoords) + '</b> sin coordenadas.';
+    c.className = 'dato';
+    c.innerHTML = t;
   }
 
   function pintarSegmentos(pts) {
@@ -392,27 +400,149 @@
     charts[id] = new Chart(el, cfg);
   }
 
+  // Animacion compartida: entrada escalonada, para que el tablero se sienta
+  // vivo al cargar y al refrescar con una corrida nueva.
+  var ANIM = { duration: 1100, easing: 'easeOutQuart', delay: function (c) {
+    return (c.type === 'data' && c.mode === 'default') ? c.dataIndex * 55 : 0;
+  } };
+
+  // Degradado vertical: el color pleno arriba, translucido abajo.
+  function vGrad(area, ctx, hex) {
+    var g = ctx.createLinearGradient(0, area.top, 0, area.bottom);
+    g.addColorStop(0, hex); g.addColorStop(1, hex + 'AA');
+    return g;
+  }
+  function relleno(hex) {
+    return function (c) {
+      var a = c.chart.chartArea;
+      return a ? vGrad(a, c.chart.ctx, hex) : hex;
+    };
+  }
+  function relleno2(cols) {
+    return function (c) {
+      var a = c.chart.chartArea, hex = cols[c.dataIndex] || AZUL;
+      return a ? vGrad(a, c.chart.ctx, hex) : hex;
+    };
+  }
+
+  var MESES = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+  function etiqMes(k) { var q = String(k).split('-'); return MESES[+q[1] - 1] + ' ' + q[0].slice(2); }
+
+  // La serie de la grafica historica. Prioridad:
+  //   1) el indice diario real, si el backend ya lo publica en DATOS_MONITOR.serie
+  //   2) si no, se reconstruye por mes de publicacion con el corpus vigente
+  // Se marca cual de las dos es, porque no significan lo mismo.
+  function serieMercado(pts) {
+    var s = window.DATOS_MONITOR && window.DATOS_MONITOR.serie;
+    if (s && s.length) {
+      return { origen: 'indice', filas: s.map(function (x) {
+        return { k: x.fecha, et: x.fecha, v: Math.round(x.precio_m2), n: x.n || 0 };
+      }) };
+    }
+    var g = {};
+    pts.forEach(function (p) {
+      var f = p.fecha_publicacion, v = ppm(p);
+      if (!f || !ppmOk(v)) return;
+      var k = String(f).slice(0, 7);
+      (g[k] = g[k] || []).push(v);
+    });
+    var filas = Object.keys(g).sort().map(function (k) {
+      return { k: k, et: etiqMes(k), v: Math.round(mediana(g[k])), n: g[k].length };
+    });
+    return { origen: 'publicacion', filas: filas };
+  }
+
+  var N_FIRME = 5;   // debajo de esto la mediana la mueve un solo anuncio
+
+  function pintarTendencia(pts) {
+    var el = document.getElementById('gTendencia');
+    if (!el) return;
+    var s = serieMercado(pts), filas = s.filas;
+    var desc = document.getElementById('tend-desc'), pie = document.getElementById('tend-pie');
+
+    if (filas.length < 2) {
+      if (desc) desc.textContent = 'Aún no hay suficientes corridas para trazar la serie.';
+      if (pie) pie.textContent = '';
+      return;
+    }
+    var flojos = filas.filter(function (f) { return f.n < N_FIRME; }).length;
+
+    if (desc) {
+      desc.innerHTML = s.origen === 'indice'
+        ? 'Mediana de $/m² de toda la oferta vigente, corrida por corrida.'
+        : 'Mediana de $/m² según el <b>mes en que se publicó</b> la oferta que sigue vigente.';
+    }
+    if (pie) {
+      pie.innerHTML = s.origen === 'indice'
+        ? 'Serie registrada por el propio monitor en cada corrida.'
+        : 'Serie reconstruida del corpus actual, no un índice de precios: solo entra la oferta que <b>sigue ' +
+          'publicada</b>, así que los meses viejos muestran lo que no se ha vendido.' +
+          (flojos ? ' Los puntos huecos (<b>' + flojos + '</b> de ' + filas.length + ') se apoyan en menos de ' +
+            N_FIRME + ' anuncios: ahí la línea es indicativa, no una tendencia.' : '') +
+          ' Cuando el pipeline acumule corridas diarias, esta gráfica pasa sola al índice real.';
+    }
+
+    var vals = filas.map(function (f) { return f.v; });
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = Math.max(120, (hi - lo) * .35);
+
+    dibujar('gTendencia', {
+      type: 'line',
+      data: { labels: filas.map(function (f) { return f.et; }), datasets: [{
+        data: vals, borderColor: NARANJA, borderWidth: 3, tension: .38, fill: true,
+        pointBackgroundColor: filas.map(function (f) { return f.n < N_FIRME ? '#fff' : NARANJA; }),
+        pointBorderColor: NARANJA, pointBorderWidth: 2.5,
+        pointRadius: filas.map(function (f) { return f.n < N_FIRME ? 4.5 : 5.5; }),
+        pointHoverRadius: 8,
+        backgroundColor: function (c) {
+          var a = c.chart.chartArea;
+          if (!a) return 'rgba(233,80,38,.12)';
+          var g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
+          g.addColorStop(0, 'rgba(233,80,38,.28)'); g.addColorStop(1, 'rgba(233,80,38,0)');
+          return g;
+        }
+      }] },
+      options: opciones({
+        animation: { duration: 1500, easing: 'easeOutQuart' },
+        plugins: { legend: { display: false }, tooltip: { callbacks: {
+          label: function (c) { return mxn(c.parsed.y) + ' /m² (mediana)'; },
+          afterLabel: function (c) {
+            var f = filas[c.dataIndex];
+            return f.n + (f.n === 1 ? ' anuncio' : ' anuncios') + (f.n < N_FIRME ? ' · muestra chica' : '');
+          } } } },
+        scales: {
+          x: { grid: { display: false }, border: { color: '#C9C2BA' },
+               ticks: { color: GRIS, font: { size: 11, weight: '600' } } },
+          y: { min: Math.max(0, lo - pad), max: hi + pad, grid: { color: REJILLA },
+               border: { display: false },
+               ticks: { color: MUTED, font: { size: 11 }, callback: function (v) { return mxn(v); } } }
+        }
+      })
+    });
+  }
+
   function pintarGraficas(pts) {
     if (!window.Chart) { console.info('Chart.js no cargó; se omiten las gráficas.'); return; }
     Chart.defaults.font.family = "'Libre Franklin', system-ui, sans-serif";
     Chart.defaults.color = GRIS;
 
-    // 1) precio mediano por zona
+    // 1) precio mediano por zona — color por zona, el mismo del mapa
     var nz = (window.TORREON_ZONAS.features || []).map(GeoZonas.nombreDe).concat([GeoZonas.ZONA_PERIFERIA]);
-    var et = [], va = [];
+    var et = [], va = [], cz = [];
     nz.forEach(function (z) {
       var v = pts.filter(function (p) { return p.zona === z && ppmOk(ppm(p)); }).map(ppm);
       if (!v.length) return;
       et.push(corta(z)); va.push(Math.round(mediana(v)));
+      cz.push((GeoZonas.COLOR_ZONA && GeoZonas.COLOR_ZONA[z]) || AZUL);
     });
     dibujar('gZonas', {
       type: 'bar', plugins: [etiquetas],
-      data: { labels: et, datasets: [{ data: va, backgroundColor: AZUL, borderRadius: 4, maxBarThickness: 46 }] },
+      data: { labels: et, datasets: [{ data: va, backgroundColor: relleno2(cz),
+              borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
-        layout: { padding: { top: 18 } },
+        animation: ANIM, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: mxn },
                    tooltip: { callbacks: { label: function (c) { return mxn(c.parsed.y) + ' /m² (mediana)'; } } } },
-        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10 } } },
+        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
                   y: { display: false, beginAtZero: true } }
       })
     });
@@ -424,12 +554,13 @@
     dibujar('gTamano', {
       type: 'bar', plugins: [etiquetas],
       data: { labels: SEGMENTOS.map(function (s) { return s.nombre; }),
-              datasets: [{ data: cnt, backgroundColor: AZUL, borderRadius: 4, maxBarThickness: 46 }] },
+              datasets: [{ data: cnt, backgroundColor: relleno(AZUL),
+                           borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
-        layout: { padding: { top: 18 } },
+        animation: ANIM, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: num },
                    tooltip: { callbacks: { label: function (c) { return c.parsed.y + ' terrenos · ' + SEGMENTOS[c.dataIndex].rango; } } } },
-        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10 } } },
+        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
                   y: { display: false, beginAtZero: true } }
       })
     });
@@ -437,43 +568,76 @@
     // 3) antigüedad — lo viejo en naranja: es el hallazgo, no decoración
     var pm = {};
     pts.forEach(function (p) { if (p.fecha_publicacion) { var m = String(p.fecha_publicacion).slice(0, 7); pm[m] = (pm[m] || 0) + 1; } });
-    var meses = Object.keys(pm).sort(), MN = ['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+    var meses = Object.keys(pm).sort();
     var corte = new Date(); corte.setMonth(corte.getMonth() - 6);
     var claveCorte = corte.toISOString().slice(0, 7);
     dibujar('gAntiguedad', {
       type: 'bar', plugins: [etiquetas],
       data: {
-        labels: meses.map(function (m) { var p = m.split('-'); return MN[+p[1] - 1] + ' ' + p[0].slice(2); }),
+        labels: meses.map(etiqMes),
         datasets: [{ data: meses.map(function (m) { return pm[m]; }),
-                     backgroundColor: meses.map(function (m) { return m < claveCorte ? NARANJA : '#C9BFB2'; }),
-                     borderRadius: 4, maxBarThickness: 40 }]
+                     backgroundColor: relleno2(meses.map(function (m) { return m < claveCorte ? NARANJA : '#C9BFB2'; })),
+                     borderRadius: 10, borderSkipped: false, maxBarThickness: 46 }]
       },
       options: opciones({
-        layout: { padding: { top: 18 } },
+        animation: ANIM, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: num },
                    tooltip: { callbacks: { label: function (c) {
                      return c.parsed.y + ' terrenos publicados ese mes, aún en venta'; } } } },
-        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10 } } },
+        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
                   y: { display: false, beginAtZero: true } }
       })
     });
 
-    // 4) por portal
+    // 4) por portal — dona, y el total al centro. Un portal caído se ve como
+    //    hueco en la dona, no como una barra sola que no dice nada.
     var pp = {};
     pts.forEach(function (p) { var f = p.fuente || 'sin dato'; pp[f] = (pp[f] || 0) + 1; });
-    var ks = Object.keys(pp).sort(function (a, b) { return pp[b] - pp[a]; });
-    dibujar('gPortales', {
-      type: 'bar', plugins: [etiquetas],
-      data: { labels: ks.map(function (k) { return k === 'inmuebles24' ? 'Inmuebles24' : k === 'pincali' ? 'Pincali' : k; }),
-              datasets: [{ data: ks.map(function (k) { return pp[k]; }), backgroundColor: AZUL,
-                           borderRadius: 4, maxBarThickness: 34 }] },
-      options: opciones({
-        indexAxis: 'y', layout: { padding: { right: 44 } },
-        plugins: { legend: { display: false }, etiquetas: { fmt: num, horizontal: true } },
-        scales: { x: { display: false, beginAtZero: true },
-                  y: { grid: { display: false }, border: { display: false }, ticks: { color: GRIS, font: { size: 11 } } } }
-      })
+    (Object.keys((window.DATOS_MONITOR && window.DATOS_MONITOR.fuentes) || {})).forEach(function (k) {
+      var d = window.DATOS_MONITOR.fuentes[k];
+      if (d && d.estatus !== 'descartado' && pp[k] == null) pp[k] = 0;
     });
+    var ks = Object.keys(pp).sort(function (a, b) { return pp[b] - pp[a]; });
+    var COLP = [AZUL, NARANJA, '#1A7A47', '#C6881E', '#5B4B8A'];
+    dibujar('gPortales', {
+      type: 'doughnut',
+      data: { labels: ks.map(nombrePortal),
+              datasets: [{ data: ks.map(function (k) { return pp[k]; }),
+                           backgroundColor: ks.map(function (_, i) { return COLP[i % COLP.length]; }),
+                           borderWidth: 3, borderColor: '#fff', hoverOffset: 10, spacing: 2 }] },
+      options: {
+        responsive: true, maintainAspectRatio: false, cutout: '66%',
+        animation: { duration: 1200, easing: 'easeOutQuart', animateRotate: true },
+        plugins: {
+          legend: { position: 'bottom', labels: { padding: 14, boxWidth: 9, boxHeight: 9,
+                    usePointStyle: true, font: { size: 11 } } },
+          tooltip: {
+            backgroundColor: '#171310', titleColor: '#fff', bodyColor: '#E8E2DC',
+            padding: 11, cornerRadius: 9, displayColors: false,
+            titleFont: { family: 'Archivo', weight: '700', size: 12.5 }, bodyFont: { size: 12 },
+            callbacks: { label: function (c) {
+              return c.parsed === 0 ? ' sin anuncios en esta corrida' : ' ' + c.parsed + ' anuncios'; } }
+          }
+        }
+      },
+      plugins: [{
+        id: 'centro',
+        afterDraw: function (ch) {
+          var a = ch.chartArea; if (!a) return;
+          var ctx = ch.ctx, cx = a.left + a.width / 2, cy = a.top + a.height / 2;
+          var tot = ks.reduce(function (s, k) { return s + pp[k]; }, 0);
+          ctx.save(); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+          ctx.fillStyle = TINTA; ctx.font = '800 30px Archivo, sans-serif';
+          ctx.fillText(num(tot), cx, cy - 8);
+          ctx.fillStyle = MUTED; ctx.font = '600 11px Libre Franklin, sans-serif';
+          ctx.fillText('anuncios', cx, cy + 15);
+          ctx.restore();
+        }
+      }]
+    });
+
+    // 5) la historica, a lo ancho
+    pintarTendencia(pts);
   }
 
   /* ================= tabla ================= */
@@ -618,9 +782,12 @@
     lista.forEach(function (p) { if (p.fuente) vistos[p.fuente] = 1; });
     var nombres = Object.keys(vistos).map(nombrePortal);
     var via = nombres.length ? ' vía ' + nombres.join(' y ') + '.' : '.';
-    document.getElementById('nota-datos').innerHTML =
-      'Datos <b>reales</b> del pipeline: ' + (lista.length - arch) + ' ofertas activas' +
-      (arch ? ' y ' + arch + ' archivadas' : '') + via;
+    var nd = document.getElementById('nota-datos');
+    if (nd) {
+      nd.className = 'dato';
+      nd.innerHTML = 'Datos <b>reales</b> del pipeline: <b>' + (lista.length - arch) + '</b> ofertas activas' +
+        (arch ? ' y <b>' + arch + '</b> archivadas' : '') + via;
+    }
     intentar('aviso de fuentes', function () { avisarFuentes(fuentes); });
     render(lista, 'pipeline', fecha);
   }
