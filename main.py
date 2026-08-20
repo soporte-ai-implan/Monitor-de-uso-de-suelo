@@ -84,6 +84,25 @@ def _diagnostico_descartes(anuncios: list[dict]) -> None:
         print(f"  No pude guardar el diagnóstico: {e}")
 
 
+def _escribir_estado(**campos) -> None:
+    """
+    Deja el parte de la corrida en web/estado.json, publicado junto al tablero.
+
+    Nunca lanza excepcion: es instrumentacion, no puede tumbar la corrida que
+    esta reportando. Y se llama en todas las salidas, incluida la de error.
+    """
+    try:
+        sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "tools"))
+        import generar_assets_web
+
+        generar_assets_web.generar_estado({
+            "corrida": datetime.now().isoformat(timespec="seconds"),
+            **campos,
+        })
+    except Exception as e:  # noqa: BLE001
+        print(f"  Aviso: no pude escribir estado.json: {e}")
+
+
 def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dict:
     inicio = datetime.now()
     print(f"\n=== Monitor de Suelo IMPLAN — corrida {inicio:%Y-%m-%d %H:%M:%S} ===")
@@ -97,6 +116,11 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
         print("\n[1/3] Extrayendo de Apify...")
         crudos, detalle_fuentes = scraper.obtener_anuncios_torreon(max_por_fuente)
         fuentes_ok = [n for n, d in detalle_fuentes.items() if d.get("estatus") == "ok"]
+        caidas = [n for n, d in detalle_fuentes.items()
+                  if d.get("estatus") in ("error", "vacia")]
+        if caidas:
+            print(f"\n  OJO: {len(caidas)} fuente(s) sin datos hoy: {', '.join(caidas)}. "
+                  f"Sus terrenos NO se dan de baja; la corrida se marca 'parcial'.")
 
         if not crudos:
             # No es lo mismo "no hay terrenos en venta" que "el scraper tronó".
@@ -106,6 +130,11 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
             if not seco:
                 database.cerrar_corrida(
                     id_corrida, "error", total_crudos=0, detalle=detalle_fuentes
+                )
+                _escribir_estado(
+                    estatus="error",
+                    razon="ninguna fuente devolvió anuncios; no se tocó la base",
+                    fuentes={n: d.get("estatus") for n, d in detalle_fuentes.items()},
                 )
             return {"estatus": "error", "razon": "sin anuncios de ninguna fuente",
                     "detalle": detalle_fuentes}
@@ -159,7 +188,11 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
 
             activos = database.obtener_activos()
             ruta = generar_assets_web.generar_datos(
-                activos, datetime.now().isoformat(timespec="seconds")
+                activos, datetime.now().isoformat(timespec="seconds"),
+                # El estado de cada fuente viaja con los datos: si un portal
+                # se cayo, el tablero tiene que decirlo. Si no, la baja de
+                # oferta se lee como mercado y no como falla tecnica.
+                fuentes=detalle_fuentes,
             )
             print(f"  Dashboard estático actualizado: {ruta.name} ({len(activos)} terrenos)")
         except Exception as e:  # noqa: BLE001 - no debe tumbar la corrida
@@ -177,6 +210,17 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
         )
 
         dur = (datetime.now() - inicio).total_seconds()
+        _escribir_estado(
+            estatus=estatus,
+            terrenos_publicados=len(validos),
+            anuncios_crudos=len(crudos),
+            fuentes={n: d.get("estatus") for n, d in detalle_fuentes.items()},
+            nuevos=resumen["nuevos"],
+            actualizados=resumen["actualizados"],
+            dados_de_baja=resumen["dados_de_baja"],
+            cambios_precio=resumen["cambios_precio"],
+            duracion_seg=round(dur, 1),
+        )
         print(f"\n=== Corrida '{estatus}' en {dur:.1f}s ===\n")
         return {"estatus": estatus, **resumen, "motivos": motivos}
 
@@ -185,6 +229,7 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
         traceback.print_exc()
         if not seco and id_corrida is not None:
             database.cerrar_corrida(id_corrida, "error", detalle={"error": str(e)})
+            _escribir_estado(estatus="error", razon=str(e)[:300])
         raise
 
 

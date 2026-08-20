@@ -24,8 +24,47 @@ resultados** para Torreón. No usarlo.
 {"maxItems": 200, "startUrl": "https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-coahuila"}
 ```
 
-Confirmado: 5/5 resultados fueron terrenos reales en Torreón. Volumen bajo
-(~18 terrenos totales en el portal), pero es fuente viva.
+Confirmado en julio de 2026: 5/5 resultados fueron terrenos reales en Torreón.
+Volumen bajo (5 anuncios por corrida), pero fuente viva.
+
+> **Caída desde el 29/07/2026.** Las corridas del 29, 30 y 31 de julio y del 1
+> de agosto terminaron `SUCCEEDED` con **0 items**. El input que se manda no
+> cambió, y el log del Actor viene cifrado, así que no se puede saber desde
+> aquí si se rompió el Actor o si Pincali cambió la página. Antes de darlo por
+> muerto: correr el Actor a mano desde la consola de Apify con el mismo
+> `startUrl` y ver si devuelve algo. Si sigue en cero, hay que buscar otro
+> Actor o quitar la fuente y decirlo en el tablero, como se hizo con
+> Vivanuncios.
+
+## Una fuente puede fallar en silencio: `SUCCEEDED` con cero anuncios
+
+Es lo que pasó con Pincali, y es la falla más peligrosa del pipeline porque no
+se parece a una falla.
+
+El código original marcaba la fuente como `ok` mientras el Actor no lanzara
+excepción. Con cero anuncios eso tenía dos consecuencias, las dos silenciosas:
+
+1. La corrida se cerraba como `ok` —las 2 fuentes "respondieron"— cuando en
+   realidad el monitor estaba corriendo con una.
+2. `fuentes_ok` incluía a Pincali, así que el blindaje 2 de `database.py`
+   archivaba **todo su inventario** como si se hubiera vendido de un día para
+   otro. El blindaje atrapaba la excepción, no el cero.
+
+Un portal no se vacía en 24 horas. Ahora una fuente que devuelve cero anuncios
+se marca `vacia`, no `ok`:
+
+| Estatus | Qué significa | ¿Se dan de baja sus anuncios? |
+|---|---|---|
+| `ok` | respondió con anuncios | sí |
+| `vacia` | terminó bien pero sin anuncios | **no** |
+| `error` | lanzó excepción | **no** |
+| `descartado` | fuente que no se usa (Vivanuncios) | no aplica |
+
+La corrida queda en `parcial`, el estado por fuente viaja en `web/datos.js` y
+el tablero pinta un aviso arriba de los indicadores. Así una caída de oferta se
+lee como falla técnica y no como movimiento del mercado.
+
+Cubierto en `tests/test_scraper.py` con un Actor falso que devuelve lista vacía.
 
 ### Vivanuncios — DESCARTADO
 

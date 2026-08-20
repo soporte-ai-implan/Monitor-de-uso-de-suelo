@@ -23,13 +23,21 @@ from typing import Any, Iterable
 
 RAIZ = pathlib.Path(__file__).resolve().parent
 GEOJSON = RAIZ / "data" / "torreon_zonas_final.geojson"
+MUNICIPIO = RAIZ / "data" / "torreon_municipio.geojson"
+
+# Zona 6 no tiene poligono propio: es una REGLA — lo que esta dentro del
+# municipio y lejos de la mancha urbana. Definirla asi evita recortar geometrias
+# y la deja exacta por construccion.
+ZONA_PERIFERIA = "Zona 6 - Periferia Sur"
 
 COLOR_ZONA = {
     "Zona 1 - Poniente y Centro Histórico": "#5B4B8A",
     "Zona 2 - Zona Norte": "#E95026",
-    "Zona 3 - Centro-Norte": "#15467A",
-    "Zona 4 - Oriente": "#C9881E",
+    "Zona 3 - Centro-Norte": "#1B5286",   # re-escalonado: el #15467A quedaba
+                                          # fuera de la banda de luminosidad
+    "Zona 4 - Oriente": "#C6881E",        # re-escalonado: contraste 2.99 -> 3.03
     "Zona 5 - Sur Oriente": "#1A7A47",
+    ZONA_PERIFERIA: "#A85751",
 }
 
 # Se subio de 1.5 a 3.0 km una vez que el guardian empezo a descartar por
@@ -56,6 +64,7 @@ MUNICIPIOS_VECINOS = (
 MUNICIPIO_PROPIO = "torreon"
 
 _cache: dict | None = None
+_cache_municipio: dict | None = None
 
 
 def cargar_zonas() -> dict:
@@ -64,6 +73,40 @@ def cargar_zonas() -> dict:
     if _cache is None:
         _cache = json.loads(GEOJSON.read_text(encoding="utf-8"))
     return _cache
+
+
+def geometria_municipio() -> dict | None:
+    """
+    Limite municipal oficial de Torreon (OpenStreetMap rel. 5606549, ODbL).
+
+    Es el guardian principal, y resuelve de raiz lo que las heuristicas hacian
+    a medias:
+
+      · Las 5 zonas son union de colonias SEPOMEX y solo cubren la mancha
+        urbana (hasta lat 25.48). El municipio llega hasta lat 24.79: todo el
+        sur rural quedaba fuera y se descartaba como si fuera otro municipio.
+      · Antes se decidia por el TEXTO del anuncio mas una tolerancia de
+        distancia. Ahora se decide por geometria: dentro del poligono es
+        Torreon, y punto.
+
+    Validado contra los 101 terrenos de la primera corrida real: 101 de 101
+    caen dentro. Gomez Palacio, Lerdo y Matamoros quedan fuera.
+    """
+    global _cache_municipio
+    if _cache_municipio is None:
+        if not MUNICIPIO.exists():
+            return None
+        gj = json.loads(MUNICIPIO.read_text(encoding="utf-8"))
+        _cache_municipio = gj["features"][0]["geometry"]
+    return _cache_municipio
+
+
+def en_municipio(lon: float, lat: float) -> bool | None:
+    """True/False si hay poligono municipal; None si el archivo no esta."""
+    geom = geometria_municipio()
+    if geom is None:
+        return None
+    return en_geometria(lon, lat, geom)
 
 
 def normalizar(txt: Any) -> str:
@@ -182,7 +225,18 @@ def clasificar(lon: float, lat: float, *textos_ubicacion: Any) -> dict:
     `textos_ubicacion` son todos los campos con texto de ubicacion del anuncio
     (ciudad, colonia, direccion, titulo). Ver municipio_valido() para el porque.
     """
-    if municipio_valido(*textos_ubicacion) is False:
+    # 1) Guardian geometrico: el limite municipal manda sobre cualquier texto.
+    dentro_mun = en_municipio(lon, lat)
+    if dentro_mun is False:
+        return {
+            "zona": None, "color": "#8A8178", "estado": "fuera",
+            "distancia_km": None,
+            "motivo": "fuera del municipio de Torreón",
+        }
+
+    # 2) Solo si no hay poligono municipal se cae al guardian por texto, que es
+    #    el metodo viejo y mas fragil.
+    if dentro_mun is None and municipio_valido(*textos_ubicacion) is False:
         blob = " ".join(str(t) for t in textos_ubicacion if t)
         vecino = next(
             (v for v in MUNICIPIOS_VECINOS if v in normalizar(blob)), "otro municipio"
@@ -210,12 +264,23 @@ def clasificar(lon: float, lat: float, *textos_ubicacion: Any) -> dict:
         if d < mejor_d:
             mejor, mejor_d = f, d
 
+    # Cerca de la mancha urbana: lo absorbe la zona mas proxima.
     if mejor is not None and mejor_d <= TOLERANCIA_KM:
         n = nombre_de(mejor)
         return {
             "zona": n, "color": COLOR_ZONA.get(n, "#8A8178"),
             "estado": "borde", "distancia_km": mejor_d,
             "motivo": f"zona más cercana ({mejor_d:.1f} km)",
+        }
+
+    # Dentro del municipio pero lejos de toda zona urbana: es la Periferia Sur.
+    # No se absorbe en una zona urbana a proposito — un predio rustico a $850/m2
+    # mezclado con lotes urbanos a $4,500 le arruinaria la mediana a esa zona.
+    if dentro_mun is True:
+        return {
+            "zona": ZONA_PERIFERIA, "color": COLOR_ZONA[ZONA_PERIFERIA],
+            "estado": "periferia", "distancia_km": mejor_d,
+            "motivo": f"dentro del municipio, {mejor_d:.1f} km fuera de la mancha urbana",
         }
 
     return {
@@ -245,11 +310,18 @@ def punto_aleatorio_en_zona(nombre_zona: str, semilla: Any = None) -> tuple[floa
     lats = [c[1] for c in coords]
 
     rng = random.Random(str(semilla)) if semilla is not None else random.Random()
-    for _ in range(500):
+    for _ in range(800):
         lon = rng.uniform(min(lons), max(lons))
         lat = rng.uniform(min(lats), max(lats))
-        if en_geometria(lon, lat, geom):
-            return lat, lon
+        if not en_geometria(lon, lat, geom):
+            continue
+        # Las zonas SEPOMEX no anidan perfectamente dentro del limite municipal:
+        # ~2% de la Zona 1 (Poniente, junto al rio) queda del lado de Durango.
+        # Sin esta comprobacion el fallback colocaria un punto que despues la
+        # propia clasificacion rechaza — el pipeline se contradiria a si mismo.
+        if en_municipio(lon, lat) is False:
+            continue
+        return lat, lon
     return None
 
 

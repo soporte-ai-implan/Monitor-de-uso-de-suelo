@@ -13,13 +13,24 @@
 (function (global) {
   'use strict';
 
-  // Colores por zona, tomados de la paleta del diseno aprobado.
+  // Zona 6 no tiene poligono propio: es una REGLA — lo que esta dentro del
+  // municipio y lejos de la mancha urbana.
+  var ZONA_PERIFERIA = 'Zona 6 - Periferia Sur';
+
+  // Colores del diseno aprobado, con dos re-escalonados por accesibilidad.
+  //
+  // OJO — el color NO identifica la zona en este tablero, y no es descuido:
+  // con el criterio de mapa (todos los pares) ni siquiera una paleta
+  // profesional de 8 colores sostiene mas de TRES categorias distinguibles
+  // bajo daltonismo. Aqui la identidad la carga el NOMBRE (etiqueta en el
+  // mapa, leyenda y tooltip); el color solo refuerza.
   var COLOR_ZONA = {
     'Zona 1 - Poniente y Centro Histórico': '#5B4B8A',
     'Zona 2 - Zona Norte': '#E95026',
-    'Zona 3 - Centro-Norte': '#15467A',
-    'Zona 4 - Oriente': '#C9881E',
-    'Zona 5 - Sur Oriente': '#1A7A47'
+    'Zona 3 - Centro-Norte': '#1B5286',
+    'Zona 4 - Oriente': '#C6881E',
+    'Zona 5 - Sur Oriente': '#1A7A47',
+    'Zona 6 - Periferia Sur': '#A85751'
   };
 
   // Un punto fuera de todas las zonas pero a menos de esto se considera borde
@@ -198,11 +209,35 @@
    *   estado 'borde'  -> fuera de todo pero a <= TOLERANCIA_KM, se asigna la mas cercana
    *   estado 'fuera'  -> otro municipio; NO se dibuja en el mapa
    */
+  // Limite municipal oficial. Es el guardian principal: resuelve por geometria
+  // lo que antes se adivinaba con texto y tolerancias de distancia.
+  function geomMunicipio() {
+    var m = global.TORREON_MUNICIPIO;
+    if (!m || !m.features || !m.features.length) return null;
+    return m.features[0].geometry;
+  }
+
+  // true / false / null si no hay poligono cargado.
+  function enMunicipio(lon, lat) {
+    var g = geomMunicipio();
+    if (!g) return null;
+    return enGeometria(lon, lat, g);
+  }
+
   function clasificar(lon, lat, geojson, textos) {
     var fs = features(geojson);
 
-    // Guardian de municipio antes que nada.
-    if (municipioValido(textos) === false) {
+    // 1) El limite municipal manda sobre cualquier texto.
+    var enMun = enMunicipio(lon, lat);
+    if (enMun === false) {
+      return {
+        zona: null, color: '#8A8178', estado: 'fuera', distanciaKm: null,
+        motivo: 'fuera del municipio de Torreón'
+      };
+    }
+
+    // 2) Solo sin poligono municipal se cae al guardian por texto (mas fragil).
+    if (enMun === null && municipioValido(textos) === false) {
       var lista = Array.isArray(textos) ? textos : [textos];
       var blob = normalizar(lista.filter(Boolean).join(' '));
       var vecino = 'otro municipio';
@@ -231,12 +266,24 @@
       if (d < mejorD) { mejorD = d; mejor = fs[k]; }
     }
 
+    // Cerca de la mancha urbana: lo absorbe la zona mas proxima.
     if (mejor && mejorD <= TOLERANCIA_KM) {
       var nb = nombreDe(mejor);
       return {
         zona: nb, color: COLOR_ZONA[nb] || '#8A8178',
         estado: 'borde', distanciaKm: mejorD,
         motivo: 'zona más cercana (' + mejorD.toFixed(1) + ' km)'
+      };
+    }
+
+    // Dentro del municipio pero lejos de toda zona urbana: Periferia Sur.
+    // No se absorbe en una zona urbana a proposito — un predio rustico a
+    // $850/m2 mezclado con lotes urbanos a $4,500 le arruinaria la mediana.
+    if (enMun === true) {
+      return {
+        zona: ZONA_PERIFERIA, color: COLOR_ZONA[ZONA_PERIFERIA],
+        estado: 'periferia', distanciaKm: mejorD,
+        motivo: 'dentro del municipio, ' + mejorD.toFixed(1) + ' km fuera de la mancha urbana'
       };
     }
 
@@ -253,7 +300,7 @@
   function clasificarLista(anuncios, geojson) {
     var dibujables = [], descartados = [];
     var resumen = {
-      dentro: 0, borde: 0, fuera: 0, sinCoords: 0,
+      dentro: 0, borde: 0, periferia: 0, fuera: 0, sinCoords: 0,
       otroMunicipio: 0, total: anuncios.length
     };
 
@@ -301,10 +348,13 @@
 
   global.GeoZonas = {
     COLOR_ZONA: COLOR_ZONA,
+    ZONA_PERIFERIA: ZONA_PERIFERIA,
     TOLERANCIA_KM: TOLERANCIA_KM,
     MUNICIPIOS_VECINOS: MUNICIPIOS_VECINOS,
     normalizar: normalizar,
     municipioValido: municipioValido,
+    enMunicipio: enMunicipio,
+    geomMunicipio: geomMunicipio,
     textosDe: textosDe,
     enGeometria: enGeometria,
     distanciaAGeometria: distanciaAGeometria,

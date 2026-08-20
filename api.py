@@ -199,6 +199,35 @@ def salud():
     }
 
 
+def _fuentes_ultima_corrida(corrida: dict | None) -> dict:
+    """
+    Estado real por portal en la ultima corrida, no la lista de intenciones.
+
+    Antes esto era una constante con los dos portales dentro. Un portal caido
+    seguia apareciendo como activo, asi que la caida de oferta se leia como
+    mercado. El detalle ya se guarda en la bitacora; aqui solo se expone.
+    """
+    detalle = (corrida or {}).get("detalle")
+    if isinstance(detalle, str):
+        try:
+            detalle = json.loads(detalle)
+        except json.JSONDecodeError:
+            detalle = None
+    fuentes = (detalle or {}).get("fuentes") if isinstance(detalle, dict) else None
+    if not isinstance(fuentes, dict) or not fuentes:
+        return {"activas": ["inmuebles24", "pincali"], "descartadas": ["vivanuncios"]}
+
+    # Las corridas anteriores al arreglo guardaron 'ok' con cero anuncios.
+    # Se reetiquetan al leerlas para que la bitacora vieja tampoco mienta.
+    salida = {}
+    for nombre, d in fuentes.items():
+        d = dict(d) if isinstance(d, dict) else {"estatus": str(d)}
+        if d.get("estatus") == "ok" and not d.get("crudos"):
+            d["estatus"] = "vacia"
+        salida[nombre] = d
+    return salida
+
+
 @app.get("/api/monitor-terrenos")
 def obtener_terrenos():
     """Anuncios activos. Es lo que consume el mapa del dashboard."""
@@ -207,7 +236,8 @@ def obtener_terrenos():
     return {
         "total": len(filas),
         "ultima_actualizacion": (corrida or {}).get("fin"),
-        "fuentes": {"activas": ["inmuebles24", "pincali"], "descartadas": ["vivanuncios"]},
+        "estatus_corrida": (corrida or {}).get("estatus"),
+        "fuentes": _fuentes_ultima_corrida(corrida),
         "terrenos": filas,
     }
 

@@ -119,12 +119,17 @@ python tests/test_api.py
 
 | Fuente | Estado | Volumen |
 |---|---|---|
-| Inmuebles24 | activa | ~84 terrenos |
-| Pincali | activa | ~18 terrenos |
+| Inmuebles24 | activa | 120 anuncios por corrida (~101 pasan las compuertas) |
+| Pincali | **sin datos desde el 29/07/2026** | devolvía 5; hoy regresa 0 sin lanzar error |
 | Vivanuncios | **descartada** | los 2 actores disponibles fallaron en pruebas reales |
 
 El monitor arranca con **2 fuentes, no 3**. El dashboard lo declara con
 Vivanuncios tachado; no se esconde la limitación.
+
+Una fuente que termina bien pero regresa **cero anuncios** se marca `vacia`, no
+`ok`: la corrida queda `parcial` y sus terrenos **no** se dan de baja. Sin eso,
+un scraper caído se leía como "se vendió todo el inventario del portal". Ver
+[docs/scraper.md](docs/scraper.md).
 
 ## Cosas que conviene saber
 
