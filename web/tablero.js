@@ -961,6 +961,17 @@
     lista.forEach(function (p) { if (p.fuente) vistos[p.fuente] = 1; });
     var nombres = Object.keys(vistos).map(nombrePortal);
     var via = nombres.length ? ' vía ' + nombres.join(' y ') + '.' : '.';
+
+    // La entrada y el alcance nombran los portales que DE VERDAD entregaron en
+    // esta corrida, no una lista escrita a mano. Con un portal caído, el texto
+    // decía "Inmuebles24 y Pincali" sin un solo anuncio de Pincali; al revés,
+    // apagar un portal obligaba a editar el HTML a mano y se olvidaba.
+    var vivos = document.getElementById('portales-vivos');
+    if (vivos && nombres.length) vivos.textContent = nombres.join(' y ');
+    var cob = document.getElementById('cobertura-portales');
+    if (cob && nombres.length) {
+      cob.innerHTML = '<b>' + (nombres.length === 1 ? 'un portal' : nombres.length + ' portales') + '</b>';
+    }
     var nd = document.getElementById('nota-datos');
     if (nd) {
       nd.className = 'dato';

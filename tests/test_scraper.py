@@ -115,6 +115,29 @@ def main() -> int:
     check(b["fecha_publicacion"] == "2026-06-30", "recorta la fecha", b["fecha_publicacion"])
     check(b["estado"] == "Coahuila", "toma la entidad de `state`")
 
+    print("\nSuperficie de Pincali: el Actor deja areaM2 null y la pone en features")
+    # Los 5 casos son anuncios REALES de la corrida del 21/08/2026.
+    reales = [
+        (["25,748 m² de terreno", "Publicado", "25,748 m² de terreno"], 25748.0),
+        (["601.15 m² de terreno", "Publicado"], 601.15),
+        (["14,496.79 m² de terreno"], 14496.79),
+        (["401.4 m² de terreno"], 401.4),
+        (["200 m² de terreno", "20 m de largo", "10 m de frente"], 200.0),
+    ]
+    for feats, esperado in reales:
+        got = scraper._m2_pincali({"areaM2": None, "features": feats})
+        check(got == esperado, f"lee {esperado} m² de features", str(got))
+    check(scraper._m2_pincali({"areaM2": 350, "features": ["999 m² de terreno"]}) == 350,
+          "si algún día llenan areaM2, ese manda")
+    # Largo y frente NO son superficie: confundirlos arruinaría el precio por m².
+    check(scraper._m2_pincali({"features": ["20 m de largo", "10 m de frente"]}) is None,
+          "ignora largo y frente")
+    check(scraper._m2_pincali({}) is None, "sin features ni areaM2 deja None")
+    con_feats = scraper.normalizar_pincali(
+        {"listingId": "X1", "features": ["601.15 m² de terreno"]}
+    )
+    check(con_feats["m2"] == 601.15, "el normalizador ya trae la superficie", str(con_feats["m2"]))
+
     print("\nRobustez ante campos faltantes o basura")
     check(scraper._num(None) is None, "_num(None)")
     check(scraper._num("") is None, "_num('')")
@@ -137,14 +160,9 @@ def main() -> int:
     # SUCCEEDED con 0 items. Si eso cuenta como fuente 'ok', database.py archiva
     # todo su inventario como si se hubiera vendido (blindaje 2), y la corrida
     # se reporta 'ok' con un portal caido.
-    #
-    # Pincali hoy va apagado (ver FUENTES_ACTIVAS), pero el blindaje aplica a
-    # cualquier fuente: aqui se encienden las dos a proposito para seguir
-    # probandolo. Si manana se reactiva una fuente, la proteccion ya esta viva.
     original_cliente, original_correr = scraper._cliente, scraper._correr_actor
     original_activas = scraper.FUENTES_ACTIVAS
     try:
-        scraper.FUENTES_ACTIVAS = ("inmuebles24", "pincali")
         scraper._cliente = lambda: None
         scraper._correr_actor = lambda _c, actor_id, _i: (
             [] if actor_id == scraper.ACTOR_PINCALI else [dict(i24)]
@@ -173,9 +191,9 @@ def main() -> int:
     finally:
         scraper._cliente, scraper._correr_actor = original_cliente, original_correr
 
-    check("pincali" not in scraper.FUENTES_ACTIVAS,
-          "Pincali no se corre por omisión", str(scraper.FUENTES_ACTIVAS))
-    for apagada in ("pincali", "vivanuncios"):
+    check("pincali" in scraper.FUENTES_ACTIVAS,
+          "Pincali sí se corre: la superficie viene en features", str(scraper.FUENTES_ACTIVAS))
+    for apagada in ("vivanuncios",):
         check(det2.get(apagada, {}).get("estatus") == "descartado",
               f"'{apagada}' viaja declarado como descartado", str(det2.get(apagada)))
         check(bool(det2.get(apagada, {}).get("razon")),

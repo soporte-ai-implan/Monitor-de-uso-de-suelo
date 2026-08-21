@@ -42,7 +42,7 @@ Programarlo en automático: ver [docs/scheduler.md](docs/scheduler.md).
 
 ```
 main.py         orquesta: scraper -> geocoding -> database
-scraper.py      Actores de Apify (Inmuebles24; Pincali apagado)
+scraper.py      Actores de Apify (Inmuebles24 + Pincali)
 geocoding.py    Nominatim + fallback dentro del polígono de zona
 zonas.py        point-in-polygon y asignación de zona (espejo de web/geo.js)
 database.py     altas/bajas, historial de precios, filtros
@@ -120,7 +120,7 @@ python tests/test_api.py
 | Fuente | Estado | Volumen |
 |---|---|---|
 | Inmuebles24 | activa | 120 anuncios por corrida (~101 pasan las compuertas) |
-| Pincali | **apagado el 21/08/2026** | el Actor limita cuentas gratuitas a ~5 anuncios, y llegan sin `areaM2` |
+| Pincali | activo, rinde poco | el Actor limita cuentas gratuitas a ~5 anuncios; la superficie viene en `features`, no en `areaM2` |
 | Vivanuncios | **descartada** | los 2 actores disponibles fallaron en pruebas reales |
 
 El monitor arranca con **2 fuentes, no 3**. El dashboard lo declara con
