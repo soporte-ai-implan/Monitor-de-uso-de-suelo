@@ -517,7 +517,7 @@
     var buenos = todos.filter(ppmOk), atip = todos.length - buenos.length;
     document.getElementById('k-precio').textContent = buenos.length ? mxn(mediana(buenos)) : '—';
     document.getElementById('k-precio-pie').textContent =
-      atip ? 'por m² · ' + atip + ' atípico(s) excluido(s)' : 'por m² de terreno';
+      atip ? 'mediana por m² · ' + atip + ' atípico(s) excluido(s)' : 'mediana por m² de terreno';
 
     var m2 = pts.map(function (p) { return Number(p.m2); }).filter(function (v) { return v > 0; });
     document.getElementById('k-m2').textContent = m2.length ? num(mediana(m2)) : '—';
@@ -873,28 +873,17 @@
     var el = document.getElementById('gTendencia');
     if (!el) return;
     var s = serieMercado(pts), filas = s.filas;
-    var desc = document.getElementById('tend-desc'), pie = document.getElementById('tend-pie');
+    var desc = document.getElementById('tend-desc');
 
     if (filas.length < 2) {
       if (desc) desc.textContent = 'Aún no hay suficientes corridas para trazar la serie.';
-      if (pie) pie.textContent = '';
       return;
     }
-    var flojos = filas.filter(function (f) { return f.n < N_FIRME; }).length;
 
     if (desc) {
       desc.innerHTML = s.origen === 'indice'
         ? 'Mediana de $/m² de toda la oferta vigente, corrida por corrida.'
         : 'Mediana de $/m² según el <b>mes en que se publicó</b> la oferta que sigue vigente.';
-    }
-    if (pie) {
-      pie.innerHTML = s.origen === 'indice'
-        ? 'Serie registrada por el propio monitor en cada corrida.'
-        : 'No es un índice de precios: solo entra la oferta que <b>sigue publicada</b>, así que los meses ' +
-          'viejos muestran lo que no se ha vendido.' +
-          (flojos ? ' Los puntos huecos (<b>' + flojos + '</b> de ' + filas.length + ') traen menos de ' +
-            N_FIRME + ' anuncios.' : '') +
-          ' Con corridas diarias acumuladas pasa sola al índice real.';
     }
 
     var vals = filas.map(function (f) { return f.v; });
@@ -1242,6 +1231,10 @@
 
   var incrustado = window.DATOS_MONITOR && (window.DATOS_MONITOR.terrenos || []).length
     ? window.DATOS_MONITOR : null;
+  // Lo más reciente que este tablero ya pintó. Antes se comparaba siempre
+  // contra la fecha del archivo, así que tras el primer refresco el atajo
+  // dejaba de servir y se repintaba de más.
+  var ultimaVista = incrustado ? (incrustado.generado || '') : '';
 
   // 1) Pinta de inmediato lo que trae el archivo: la página nunca se ve vacía
   //    esperando a la red.
@@ -1257,12 +1250,12 @@
         clearTimeout(reloj);
         if (!(d.terrenos || []).length) throw new Error('respondió sin terrenos');
         var nueva = d.ultima_actualizacion || '';
-        var actual = incrustado ? (incrustado.generado || '') : '';
-        if (incrustado && nueva && actual && nueva <= actual) {
-          console.info('El archivo ya tiene la corrida más reciente (' + actual + ').');
+        if (nueva && ultimaVista && nueva <= ultimaVista) {
+          console.info('Ya está la corrida más reciente (' + ultimaVista + ').');
           return;
         }
         console.info('Datos actualizados desde la API:', nueva);
+        if (nueva) ultimaVista = nueva;
         conDatos(d.terrenos, nueva, d.fuentes);
       })
       .catch(function (e) {
@@ -1276,7 +1269,33 @@
       });
   }
 
+  /* En hosting estatico no hay API que consultar: el pipeline regenera los
+     archivos y ya. Sin esto, un tablero dejado abierto en una pantalla se
+     quedaba con la corrida del dia que se abrio, aunque afuera hubiera datos
+     nuevos. estado.json sirve de aviso: lo escribe cada corrida, pesa nada, y
+     si trae una fecha mas nueva se recarga la pagina para tomar los archivos
+     regenerados. */
+  function revisarEstado() {
+    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
+    fetch('estado.json?t=' + Date.now(), { cache: 'no-store' })
+      .then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (d) {
+        if (!d || !d.corrida) return;
+        if (ultimaVista && d.corrida <= ultimaVista) return;
+        // Una sola recarga por corrida: si los archivos aun no se regeneran o
+        // vienen de cache, esto evita quedarse recargando en circulo.
+        try {
+          if (sessionStorage.getItem('mt-recarga') === d.corrida) return;
+          sessionStorage.setItem('mt-recarga', d.corrida);
+        } catch (e) { return; }
+        console.info('Hay una corrida más nueva (' + d.corrida + '); recargando.');
+        location.reload();
+      })
+      .catch(function () { /* sin estado.json no hay nada que hacer */ });
+  }
+
   refrescar();
+  revisarEstado();
   // Si alguien deja el tablero abierto en una pantalla, que no se quede viejo.
-  setInterval(refrescar, 60 * 60 * 1000);
+  setInterval(function () { refrescar(); revisarEstado(); }, 60 * 60 * 1000);
 })();
