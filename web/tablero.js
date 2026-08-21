@@ -427,11 +427,114 @@
     }
   };
 
+  /* ---------- movimiento continuo: el liquido nunca se queda quieto ----------
+     Regla: la ALTURA de la barra y la posicion de los puntos NO se tocan; esas
+     son el dato. Lo que se mueve es el relleno de adentro —un brillo que sube
+     como corriente y una ondita en la superficie—, recortado al area de cada
+     barra. Asi el tablero respira sin que ninguna cifra parezca cambiar. */
+  var reloj = 0, latiendo = false;
+  var vivas = [];   // graficas con liquido, en pantalla y ya asentadas
+
+  function sheen(ctx, x, ancho, arriba, alto, fase) {
+    if (alto <= 1) return;
+    var recorrido = alto + 70;
+    var cy = arriba + alto - ((fase % 1) * recorrido) + 35;
+    var g = ctx.createLinearGradient(0, cy - 34, 0, cy + 34);
+    g.addColorStop(0, 'rgba(255,255,255,0)');
+    g.addColorStop(.5, 'rgba(255,255,255,.30)');
+    g.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(x, arriba, ancho, alto);
+  }
+  function onda(ctx, x, ancho, arriba, t, amplitud) {
+    ctx.beginPath();
+    for (var k = 0; k <= ancho; k += 3) {
+      var y = arriba + Math.sin((k / ancho) * Math.PI * 2 + t) * amplitud;
+      if (k === 0) ctx.moveTo(x + k, y); else ctx.lineTo(x + k, y);
+    }
+    ctx.strokeStyle = 'rgba(255,255,255,.55)';
+    ctx.lineWidth = 1.6;
+    ctx.stroke();
+  }
+
+  var liquido = {
+    id: 'liquido',
+    afterDatasetsDraw: function (ch) {
+      if (REDUCIR) return;
+      var ctx = ch.ctx, meta = ch.getDatasetMeta(0);
+      if (!meta || !meta.data.length) return;
+      var t = reloj / 1000;
+
+      if (ch.config.type === 'line') {
+        // Recorta al area bajo la linea y pasa el brillo por dentro.
+        var base = ch.chartArea.bottom, ps = [];
+        meta.data.forEach(function (e) { ps.push(e.getProps(['x', 'y'], true)); });
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(ps[0].x, base);
+        ps.forEach(function (q) { ctx.lineTo(q.x, q.y); });
+        ctx.lineTo(ps[ps.length - 1].x, base);
+        ctx.closePath();
+        ctx.clip();
+        var top = ch.chartArea.top;
+        sheen(ctx, ch.chartArea.left, ch.chartArea.right - ch.chartArea.left, top, base - top, t / 4.2);
+        ctx.restore();
+        return;
+      }
+
+      meta.data.forEach(function (el, i) {
+        var q = el.getProps(['x', 'y', 'base', 'width'], true);
+        var ancho = q.width, x = q.x - ancho / 2;
+        var arriba = Math.min(q.y, q.base), alto = Math.abs(q.base - q.y);
+        if (alto <= 2) return;
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, arriba, ancho, alto);
+        ctx.clip();
+        sheen(ctx, x, ancho, arriba, alto, t / 3.4 + i * 0.17);
+        // La superficie ondula apenas: es tension de agua, no ruido del dato.
+        onda(ctx, x, ancho, arriba + 1.4, t * 1.5 + i * 0.9, 1.3);
+        ctx.restore();
+      });
+    }
+  };
+
+  var ultimoCuadro = 0;
+  function latir(ts) {
+    reloj = ts || 0;
+    // 30 c/s alcanzan de sobra para un liquido lento y no calientan la laptop.
+    if (reloj - ultimoCuadro < 33) { requestAnimationFrame(latir); return; }
+    ultimoCuadro = reloj;
+    var alguna = false;
+    vivas.forEach(function (id) {
+      var ch = charts[id], el = document.getElementById(id);
+      if (!ch || !el) return;
+      var r = el.getBoundingClientRect();
+      // Fuera de pantalla no se dibuja: no tiene sentido gastar cuadros ahi.
+      if (r.bottom < 0 || r.top > (window.innerHeight || 0)) return;
+      alguna = true;
+      ch.draw();
+    });
+    if (alguna || vivas.length) requestAnimationFrame(latir);
+    else latiendo = false;
+  }
+  function animarLiquido(id) {
+    if (REDUCIR || vivas.indexOf(id) !== -1) return;
+    vivas.push(id);
+    if (!latiendo) { latiendo = true; requestAnimationFrame(latir); }
+  }
+
   // Chart.js anima al construirse. Si el tablero se pinta completo al cargar,
   // las graficas de abajo terminan su recorrido antes de que nadie baje a
   // verlas. Esto lo retiene y lo dispara cuando cada una entra a pantalla.
   var yaCorrio = {};
   var mirilla = null;
+  var CON_LIQUIDO = ['gZonas', 'gTamano', 'gAntiguedad', 'gTendencia'];
+  // Primero sube el nivel (entrada), y ya asentado empieza a moverse.
+  function liquidoTrasEntrada(id) {
+    if (CON_LIQUIDO.indexOf(id) === -1) return;
+    setTimeout(function () { animarLiquido(id); }, 1900);
+  }
   function destaparGraficas() {
     Object.keys(charts).forEach(function (id) {
       var el = document.getElementById(id);
@@ -440,7 +543,11 @@
   }
   function observarGraficas() {
     // Sin observador o con movimiento reducido: todo visible y sin trucos.
-    if (REDUCIR || !('IntersectionObserver' in window)) { destaparGraficas(); return; }
+    if (REDUCIR || !('IntersectionObserver' in window)) {
+      destaparGraficas();
+      Object.keys(charts).forEach(liquidoTrasEntrada);
+      return;
+    }
     if (!mirilla) {
       mirilla = new IntersectionObserver(function (filas) {
         filas.forEach(function (f) {
@@ -453,6 +560,7 @@
           ch.reset();                      // vuelve al piso
           f.target.style.opacity = '1';    // ya sin pixeles viejos que delaten
           ch.update();                     // y sube
+          liquidoTrasEntrada(id);
         });
       }, { threshold: .3 });
     }
@@ -461,7 +569,9 @@
       if (!el || yaCorrio[id]) return;
       // Si ya se ve al cargar, que anime de inmediato; si no, al llegar.
       var r = el.getBoundingClientRect();
-      if (r.top < (window.innerHeight || 0) && r.bottom > 0) { yaCorrio[id] = 1; return; }
+      if (r.top < (window.innerHeight || 0) && r.bottom > 0) {
+        yaCorrio[id] = 1; liquidoTrasEntrada(id); return;
+      }
       // El canvas guarda los pixeles de su ultimo dibujo, asi que al bajar se
       // veria la grafica ya terminada un instante antes de caer al piso. Se
       // mantiene invisible hasta que le toca subir.
@@ -551,7 +661,7 @@
     var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = Math.max(120, (hi - lo) * .35);
 
     dibujar('gTendencia', {
-      type: 'line',
+      type: 'line', plugins: [liquido],
       data: { labels: filas.map(function (f) { return f.et; }), datasets: [{
         data: vals, borderColor: NARANJA, borderWidth: 3, tension: .38, fill: true,
         pointBackgroundColor: filas.map(function (f) { return f.n < N_FIRME ? '#fff' : NARANJA; }),
@@ -600,7 +710,7 @@
       cz.push((GeoZonas.COLOR_ZONA && GeoZonas.COLOR_ZONA[z]) || AZUL);
     });
     dibujar('gZonas', {
-      type: 'bar', plugins: [etiquetas],
+      type: 'bar', plugins: [etiquetas, liquido],
       data: { labels: et, datasets: [{ data: va, backgroundColor: relleno2(cz),
               borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
@@ -617,7 +727,7 @@
       return pts.filter(function (p) { var m = Number(p.m2); return m >= s.lo && m < s.hi; }).length;
     });
     dibujar('gTamano', {
-      type: 'bar', plugins: [etiquetas],
+      type: 'bar', plugins: [etiquetas, liquido],
       data: { labels: SEGMENTOS.map(function (s) { return s.nombre; }),
               datasets: [{ data: cnt, backgroundColor: relleno(AZUL),
                            borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
@@ -637,7 +747,7 @@
     var corte = new Date(); corte.setMonth(corte.getMonth() - 6);
     var claveCorte = corte.toISOString().slice(0, 7);
     dibujar('gAntiguedad', {
-      type: 'bar', plugins: [etiquetas],
+      type: 'bar', plugins: [etiquetas, liquido],
       data: {
         labels: meses.map(etiqMes),
         datasets: [{ data: meses.map(function (m) { return pm[m]; }),

@@ -195,10 +195,24 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
                 fuentes=detalle_fuentes,
             )
             print(f"  Dashboard estático actualizado: {ruta.name} ({len(activos)} terrenos)")
+
+            # Y el archivo de un solo HTML. Si no se rearma aqui, se queda con
+            # los datos del dia que se empaqueto: el tablero decia "actualizado
+            # el 1 de agosto" con el pipeline corriendo al dia. Es el artefacto
+            # que se manda por correo y se sube al hosting, asi que tiene que
+            # salir de cada corrida, no de un empaquetado manual.
+            try:
+                import empaquetar_html
+
+                empaquetar_html.main()
+            except Exception as e:  # noqa: BLE001 - el tablero de carpeta ya quedo
+                print(f"  Aviso: no pude rearmar el HTML autocontenido: {e}")
         except Exception as e:  # noqa: BLE001 - no debe tumbar la corrida
             print(f"  Aviso: no pude regenerar el dashboard estático: {e}")
 
-        estatus = "ok" if len(fuentes_ok) == 2 else "parcial"
+        # Contra las fuentes que de verdad se iban a correr, no contra un 2
+        # fijo: con Pincali apagado, "2 de 2" marcaba parcial toda corrida sana.
+        estatus = "ok" if len(fuentes_ok) == len(scraper.FUENTES_ACTIVAS) else "parcial"
         database.cerrar_corrida(
             id_corrida, estatus,
             total_crudos=len(crudos), total_terrenos=len(validos),

@@ -18,6 +18,23 @@ Torreón. Trae lat/lon, precio, m², URL.
 tiene un bug confirmado: combinar `location` + `property_type` regresa **0
 resultados** para Torreón. No usarlo.
 
+### Pincali — apagado desde el 21/08/2026
+
+**No se corre.** Está fuera de `FUENTES_ACTIVAS` en `scraper.py`. La razón se
+midió corriendo el Actor a mano con la URL y el input de producción:
+
+- Termina `SUCCEEDED` y devuelve **5 anuncios**, con este mensaje del propio
+  Actor: *"To ensure service stability, free accounts have limited data
+  extraction. Upgrade to a paid plan to unlock full access"*. El tope lo pone el
+  Actor por ser cuenta gratuita — la URL y el input estaban bien.
+- Los 5 llegan con **`areaM2` en `null`** y 3 de 5 **sin coordenadas**. Sin
+  superficie no hay precio por m², que es la cifra principal del monitor; sin
+  coordenadas no se pueden colocar en el mapa.
+
+O sea: ~5 anuncios que no alimentan ni la mediana ni el mapa. Para reactivarlo
+basta `FUENTES_ACTIVAS=inmuebles24,pincali` en `.env`, pero antes conviene medir
+si con plan de pago ya llega `areaM2`.
+
 ### Pincali — `azzouzana/pincali-com-scraper-by-search-url`
 
 ```python

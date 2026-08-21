@@ -137,8 +137,14 @@ def main() -> int:
     # SUCCEEDED con 0 items. Si eso cuenta como fuente 'ok', database.py archiva
     # todo su inventario como si se hubiera vendido (blindaje 2), y la corrida
     # se reporta 'ok' con un portal caido.
+    #
+    # Pincali hoy va apagado (ver FUENTES_ACTIVAS), pero el blindaje aplica a
+    # cualquier fuente: aqui se encienden las dos a proposito para seguir
+    # probandolo. Si manana se reactiva una fuente, la proteccion ya esta viva.
     original_cliente, original_correr = scraper._cliente, scraper._correr_actor
+    original_activas = scraper.FUENTES_ACTIVAS
     try:
+        scraper.FUENTES_ACTIVAS = ("inmuebles24", "pincali")
         scraper._cliente = lambda: None
         scraper._correr_actor = lambda _c, actor_id, _i: (
             [] if actor_id == scraper.ACTOR_PINCALI else [dict(i24)]
@@ -146,6 +152,7 @@ def main() -> int:
         anuncios, detalle = scraper.obtener_anuncios_torreon(10)
     finally:
         scraper._cliente, scraper._correr_actor = original_cliente, original_correr
+        scraper.FUENTES_ACTIVAS = original_activas
 
     check(detalle["pincali"]["estatus"] == "vacia",
           "la fuente vacía NO se marca 'ok'", detalle["pincali"]["estatus"])
@@ -157,6 +164,22 @@ def main() -> int:
     check(fuentes_ok == ["inmuebles24"],
           "'pincali' queda fuera de fuentes_ok: no se archiva su inventario", str(fuentes_ok))
     check(len(anuncios) == 1, "los anuncios de la fuente viva sí pasan", str(len(anuncios)))
+
+    print("\nFuentes apagadas: se declaran, no se esconden")
+    try:
+        scraper._cliente = lambda: None
+        scraper._correr_actor = lambda _c, _a, _i: [dict(i24)]
+        _, det2 = scraper.obtener_anuncios_torreon(10)
+    finally:
+        scraper._cliente, scraper._correr_actor = original_cliente, original_correr
+
+    check("pincali" not in scraper.FUENTES_ACTIVAS,
+          "Pincali no se corre por omisión", str(scraper.FUENTES_ACTIVAS))
+    for apagada in ("pincali", "vivanuncios"):
+        check(det2.get(apagada, {}).get("estatus") == "descartado",
+              f"'{apagada}' viaja declarado como descartado", str(det2.get(apagada)))
+        check(bool(det2.get(apagada, {}).get("razon")),
+              f"'{apagada}' dice por qué quedó fuera")
 
     print("\n" + "=" * 62)
     if fallas:

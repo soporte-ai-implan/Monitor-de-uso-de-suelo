@@ -29,6 +29,40 @@ URL_PINCALI = "https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-co
 # Vivanuncios queda fuera a proposito: los 2 actores disponibles fallaron en
 # pruebas reales (uno crashea en ~1s, el otro muere a los 66s por Cloudflare).
 # Ver docs/scraper.md. El dashboard lo declara tachado, no lo esconde.
+#
+# Pincali tambien queda fuera, y NO por un error nuestro. Medido el 21/08/2026
+# corriendo el Actor a mano con la URL y el input de produccion:
+#
+#   - El Actor termina SUCCEEDED y devuelve 5 anuncios, con este mensaje suyo:
+#     "To ensure service stability, free accounts have limited data extraction.
+#     Upgrade to a paid plan to unlock full access". O sea, el tope lo pone el
+#     Actor por ser cuenta gratuita; la URL y el input estan bien.
+#   - Los 5 llegan con `areaM2` en null y 3 de 5 sin coordenadas. Sin superficie
+#     no hay precio por m2, que es la cifra principal del monitor, y sin
+#     coordenadas no se pueden poner en el mapa.
+#
+# Es decir: aporta ~5 anuncios que no alimentan ni la mediana ni el mapa. Se
+# apaga hasta que haya plan de pago; entonces basta volverlo a poner en
+# FUENTES_ACTIVAS y medir de nuevo si ya trae superficie.
+FUENTES_ACTIVAS = tuple(
+    f.strip() for f in os.getenv("FUENTES_ACTIVAS", "inmuebles24").split(",") if f.strip()
+)
+
+# Por que quedo fuera cada fuente apagada. Viaja al dashboard y a la bitacora
+# para que la ausencia sea explicita y no parezca un olvido.
+FUENTES_APAGADAS = {
+    "pincali": {
+        "estatus": "descartado",
+        "razon": (
+            "el Actor limita las cuentas gratuitas a ~5 anuncios, y esos llegan "
+            "sin superficie (areaM2 null), asi que no alimentan el precio por m²"
+        ),
+    },
+    "vivanuncios": {
+        "estatus": "descartado",
+        "razon": "los 2 actores disponibles fallaron en pruebas reales (crash / bloqueo Cloudflare)",
+    },
+}
 
 MAX_POR_FUENTE = int(os.getenv("MAX_RESULTADOS_POR_FUENTE", "200"))
 
@@ -190,6 +224,12 @@ def obtener_anuncios_torreon(max_por_fuente: int | None = None) -> tuple[list[di
         ),
     ]
 
+    fuentes = [f for f in fuentes if f[0] in FUENTES_ACTIVAS]
+    if not fuentes:
+        raise RuntimeError(
+            "No hay fuentes activas. Revisa FUENTES_ACTIVAS en .env o en scraper.py."
+        )
+
     for nombre, actor_id, run_input, normalizar in fuentes:
         try:
             crudos = _correr_actor(client, actor_id, run_input)
@@ -223,10 +263,8 @@ def obtener_anuncios_torreon(max_por_fuente: int | None = None) -> tuple[list[di
             detalle[nombre] = {"estatus": "error", "error": str(e), "crudos": 0, "normalizados": 0}
             print(f"  [{nombre}] ERROR: {e}")
 
-    detalle["vivanuncios"] = {
-        "estatus": "descartado",
-        "razon": "los 2 actores disponibles fallaron en pruebas reales (crash / bloqueo Cloudflare)",
-    }
+    for nombre, motivo in FUENTES_APAGADAS.items():
+        detalle.setdefault(nombre, dict(motivo))
     return anuncios, detalle
 
 
