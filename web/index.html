@@ -46,9 +46,12 @@
         flex-wrap:wrap;margin-bottom:26px}
   .tope h1{font-size:2rem;font-weight:800;line-height:1.1}
   .tope p{color:var(--gris);font-size:.92rem;margin:8px 0 0;max-width:640px}
+  /* Envuelve a proposito: con la antiguedad del dato colgada al lado, el
+     nowrap empujaba el chip a 584px y arrastraba la pagina de lado en movil. */
   .chip-fecha{display:inline-flex;align-items:center;gap:8px;background:var(--papel);
               border-radius:11px;padding:11px 17px;box-shadow:var(--sombra);
-              font-size:.83rem;color:var(--gris);white-space:nowrap}
+              font-size:.83rem;color:var(--gris);flex-wrap:wrap;max-width:100%}
+  .chip-fecha > span{min-width:0}
   .chip-fecha b{color:var(--tinta)}
 
   /* ---------- tarjetas KPI ---------- */
