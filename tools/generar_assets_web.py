@@ -98,7 +98,7 @@ def main() -> None:
         WEB / "zonas.js",
         "TORREON_ZONAS",
         zonas,
-        "5 zonas de Torreon (SEPOMEX, fusionadas). Se dibuja SOLO el contorno exterior.",
+        "5 zonas de Torreon. La geometria es de SEPOMEX; el agrupamiento hasta\n// quedar en 5 siguio los distritos del Plan Director de Desarrollo Urbano.\n// Se dibuja SOLO el contorno exterior.",
     )
 
     municipio = DATA / "torreon_municipio.geojson"
