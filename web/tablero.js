@@ -284,10 +284,18 @@
       // aplastaría a todos los demás contra el piso de la escala.
       var v = pts.map(ppm).filter(function (x) { return x > 0 && ppmOk(x); }).sort(function (a, b) { return a - b; });
       var tope = v.length ? (v[Math.floor(v.length * .9)] || v[v.length - 1]) : 1;
+      // Panel propio y atenuado: a plena opacidad las manchas tapaban los
+      // tintes de zona y los puntos, que es lo que se venia viendo "opaco".
+      if (!mapa.getPane('calor')) {
+        var pane = mapa.createPane('calor');
+        pane.style.zIndex = 380;
+        pane.style.opacity = '.6';
+        pane.style.pointerEvents = 'none';
+      }
       L.heatLayer(pts.map(function (p) {
         var x = ppm(p);
         return [p.lat, p.lon, (x > 0 && tope > 0) ? Math.min(1, Math.max(.3, x / tope)) : .5];
-      }), { radius: 34, blur: 26, maxZoom: 15, minOpacity: .32,
+      }), { pane: 'calor', radius: 32, blur: 28, maxZoom: 15, minOpacity: .22,
             gradient: { .2: '#c9d9ea', .4: '#7fa8cf', .6: '#e9a26f', .8: NARANJA, 1: '#b5341a' } }).addTo(capaCalor);
     });
   }
@@ -333,32 +341,63 @@
              : '<span class="sutil">Sin liga al anuncio</span>') + '</div>';
   }
 
+  /* De lejos importa el patron, de cerca el anuncio. Con marcadores de tamano
+     fijo, alejarse los amontona y el mapa se enturbia: los aros y los numeros
+     dejan de leerse pero siguen ocupando lugar. Debajo de este zoom se reducen
+     a puntos limpios y el calor lleva la lectura. */
+  var ZOOM_DETALLE = 12;
+  function conDetalle() { return mapa.getZoom() >= ZOOM_DETALLE; }
+
+  // Area proporcional al conteo: un grupo de 11 tiene que verse mayor que uno
+  // de 2. Antes todos median 26px y el tamano no decia nada.
+  function ladoGrupo(n) { return Math.round(Math.min(34, 16 + 3.6 * Math.sqrt(n))); }
+
   function iconoPunto(p, cuantos) {
     var col = p._color || MUTED;
     var arch = p.activo === 0 || p.activo === false;
     var aprox = esAprox(p);
+    var detalle = conDetalle();
 
     if (cuantos > 1) {
-      // El numero es el dato: cuantas ofertas hay en ese punto.
-      return L.divIcon({
-        className: 'mk',
-        html: '<div class="grupo" style="background:' + col + '">' + cuantos + '</div>',
-        iconSize: [26, 26], iconAnchor: [13, 13]
-      });
+      if (!detalle) {
+        var d = Math.round(Math.min(20, 9 + 2.2 * Math.sqrt(cuantos)));
+        return L.divIcon({ className: 'mk',
+          html: '<div class="grupo lejos" style="background:' + col + ';width:' + d + 'px;height:' + d + 'px"></div>',
+          iconSize: [d, d], iconAnchor: [d / 2, d / 2] });
+      }
+      var s = ladoGrupo(cuantos);
+      return L.divIcon({ className: 'mk',
+        html: '<div class="grupo" style="background:' + col + ';width:' + s + 'px;height:' + s + 'px;' +
+              'font-size:' + (s < 22 ? 10 : 11.5) + 'px">' + cuantos + '</div>',
+        iconSize: [s, s], iconAnchor: [s / 2, s / 2] });
     }
+
+    if (!detalle) {
+      // Sueltos de lejos: un punto y ya. El aproximado solo se aclara.
+      return L.divIcon({ className: 'mk',
+        html: '<div class="chico" style="background:' + col + (aprox || arch ? ';opacity:.5' : '') + '"></div>',
+        iconSize: [8, 8], iconAnchor: [4, 4] });
+    }
+
     return L.divIcon({
       className: 'mk',
       html: '<div style="position:relative;width:14px;height:14px">' +
             (arch || aprox ? '' : '<div class="anillo" style="background:' + col + '"></div>' +
                                   '<div class="anillo" style="background:' + col + ';animation-delay:900ms"></div>') +
-            (aprox ? '<div class="aro" style="border-color:' + col + '"></div>'
+            // Aproximado: aro de tinta (dice "aproximado") con nucleo del color
+            // de su zona (dice a cual pertenece). Sin numero, para no chocar con
+            // el conteo de los grupos: el mismo digito con dos significados.
+            (aprox ? '<div class="aro"></div><div class="centro" style="background:' + col + '"></div>'
                    : '<div class="nucleo" style="background:' + col + (arch ? ';opacity:.45' : '') + '"></div>') +
             '</div>',
       iconSize: [14, 14], iconAnchor: [7, 7]
     });
   }
 
+  var ultimosPts = [], bandaPrevia = null;
   function dibujarPuntos(pts) {
+    ultimosPts = pts;
+    bandaPrevia = conDetalle();
     capaPuntos.clearLayers();
 
     // Agrupa por coordenada redondeada a ~11 m: eso junta tanto los duplicados
@@ -424,6 +463,13 @@
   }
 
   var aproximados = 0, dibujados = 0;
+  var notaVia = '.', notaArchivadas = 0;
+  // Solo se redibuja al CRUZAR el umbral, no en cada rueda del raton.
+  mapa.on('zoomend', function () {
+    if (!ultimosPts.length) return;
+    if (conDetalle() !== bandaPrevia) dibujarPuntos(ultimosPts);
+  });
+
   function dibujarLeyenda() {
     var c = document.getElementById('leyenda');
     c.innerHTML = '';
@@ -1132,6 +1178,12 @@
       TODOS = r.dibujables; llenarFiltros(TODOS); conectarTabla(); pintarTabla();
     });
 
+    var nd = document.getElementById('nota-datos');
+    if (nd) {
+      nd.className = 'dato';
+      nd.innerHTML = 'Datos <b>reales</b> del pipeline: <b>' + num(r.dibujables.length) + '</b> ofertas activas' +
+        (notaArchivadas ? ' y <b>' + num(notaArchivadas) + '</b> archivadas' : '') + notaVia;
+    }
     sellarFecha(fecha);
     if (r.resumen.fuera) console.warn('Fuera del municipio (no dibujados):', r.descartados);
   }
@@ -1155,12 +1207,11 @@
     if (cob && nombres.length) {
       cob.innerHTML = '<b>' + (nombres.length === 1 ? 'un portal' : nombres.length + ' portales') + '</b>';
     }
-    var nd = document.getElementById('nota-datos');
-    if (nd) {
-      nd.className = 'dato';
-      nd.innerHTML = 'Datos <b>reales</b> del pipeline: <b>' + (lista.length - arch) + '</b> ofertas activas' +
-        (arch ? ' y <b>' + arch + '</b> archivadas' : '') + via;
-    }
+    // El conteo lo pone render(), ya filtrado por el guardián municipal: aquí
+    // se contaban las filas crudas y la nota decía 98 donde el indicador decía
+    // 97, en la misma pantalla.
+    notaVia = via;
+    notaArchivadas = arch;
     render(lista, 'pipeline', fecha);
   }
 

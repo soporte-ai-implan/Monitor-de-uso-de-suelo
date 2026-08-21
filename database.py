@@ -250,6 +250,63 @@ def obtener_activos() -> list[dict]:
     return [dict(f) for f in filas]
 
 
+def reclasificar_zonas() -> dict:
+    """
+    Vuelve a pasar TODOS los anuncios activos por zonas.clasificar().
+
+    La zona se asignaba solo al dar de alta un anuncio, nunca despues. Eso deja
+    la base con reglas mezcladas: un anuncio guardado antes de que existiera el
+    guardian municipal conservaba su zona vieja para siempre. Paso de verdad
+    con i24-145257488 ("La Nueva Laguna"), guardado como "Zona 2 / borde" el
+    28/07/2026; hoy zonas.py dice que cae FUERA del municipio. El tablero lo
+    reclasifica en el navegador y lo descarta, pero la base lo seguia contando:
+    de ahi el 97 contra 98 en la misma pantalla.
+
+    Reclasificar en cada corrida cuesta milisegundos y hace que cualquier
+    cambio futuro —tolerancia, poligonos, un limite municipal nuevo— se propague
+    solo, en vez de acumular capas de reglas viejas.
+
+    No borra nada: una fila que ahora cae fuera se queda con su motivo, para que
+    el descarte sea auditable.
+    """
+    import zonas
+
+    conn = conectar()
+    filas = conn.execute(
+        "SELECT id_anuncio, lat, lon, ciudad, nombre_colonia, ubicacion, titulo,"
+        "       zona, zona_estado FROM anuncios WHERE activo = 1"
+    ).fetchall()
+
+    cambios, por_estado = [], {}
+    for f in filas:
+        if f["lat"] is None or f["lon"] is None:
+            continue
+        c = zonas.clasificar(f["lon"], f["lat"], f["ciudad"], f["nombre_colonia"],
+                             f["ubicacion"], f["titulo"])
+        por_estado[c["estado"]] = por_estado.get(c["estado"], 0) + 1
+        if c["estado"] != f["zona_estado"] or (c["zona"] or None) != (f["zona"] or None):
+            cambios.append((c["zona"], c["estado"], c["motivo"], f["id_anuncio"],
+                            f["zona"], f["zona_estado"]))
+
+    for zona, estado, motivo, id_anuncio, _, _ in cambios:
+        conn.execute(
+            "UPDATE anuncios SET zona = ?, zona_estado = ?, zona_motivo = ? WHERE id_anuncio = ?",
+            (zona, estado, motivo, id_anuncio),
+        )
+    conn.commit()
+    conn.close()
+
+    return {
+        "revisados": len(filas),
+        "reclasificados": len(cambios),
+        "por_estado": por_estado,
+        "detalle": [
+            {"id_anuncio": c[3], "antes": f"{c[4]} / {c[5]}", "ahora": f"{c[0]} / {c[1]}"}
+            for c in cambios
+        ],
+    }
+
+
 def ultima_corrida() -> dict | None:
     conn = conectar()
     fila = conn.execute(

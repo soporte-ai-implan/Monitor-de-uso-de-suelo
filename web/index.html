@@ -97,8 +97,10 @@
   .trazo{width:20px;height:0;border-top:3px solid;border-radius:2px;flex-shrink:0}
   .it-ley b{color:var(--tinta)}
   /* Muestra de punto aproximado en la leyenda: hueco y punteado, igual que en el mapa. */
-  .pt-aprox{width:13px;height:13px;border-radius:50%;border:2px dashed var(--muted);
-            background:#fff;flex-shrink:0}
+  .pt-aprox{position:relative;width:13px;height:13px;border-radius:50%;border:1.6px solid #2B2622;
+            background:#fff;flex-shrink:0;box-sizing:border-box}
+  .pt-aprox::after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;
+                   border-radius:50%;background:var(--muted)}
   .etq-zona{background:rgba(255,255,255,.82);border:1px solid var(--borde);border-radius:6px;
             padding:2px 7px;font-family:'Archivo',sans-serif;font-size:.62rem;font-weight:800;
             letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
@@ -218,14 +220,19 @@
   /* ---------- marcadores ---------- */
   @keyframes pulso{0%{transform:scale(.55);opacity:.6}70%{transform:scale(2.4);opacity:0}100%{transform:scale(2.4);opacity:0}}
   .mk{background:transparent!important;border:0!important}
-  /* Punto agrupado: el número es el dato, cuántas ofertas hay en esa coordenada. */
-  .grupo{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
-         font-family:'Archivo',sans-serif;font-weight:800;font-size:.72rem;color:#fff;
-         border:2px solid #fff;box-shadow:0 1px 4px rgba(27,23,20,.35);cursor:pointer}
-  /* Punto aproximado: hueco y punteado. Conserva el color de SU zona porque
-     sí entra en la mediana de esa zona; el hueco es el que dice "aproximado". */
-  .aro{position:absolute;left:1px;top:1px;width:12px;height:12px;border-radius:50%;
-       border:2px dashed currentColor;background:rgba(255,255,255,.9)}
+  /* Punto agrupado: el número es cuántas ofertas hay en esa coordenada, y el
+     tamaño va con la cantidad — antes todos medían igual y no decían nada. */
+  .grupo{border-radius:50%;display:flex;align-items:center;justify-content:center;
+         font-family:'Archivo',sans-serif;font-weight:800;color:#fff;
+         border:2px solid #fff;box-shadow:0 1px 4px rgba(27,23,20,.3);cursor:pointer}
+  .grupo.lejos{border-width:1.5px;box-shadow:0 1px 3px rgba(27,23,20,.25)}
+  .chico{width:8px;height:8px;border-radius:50%;border:1.5px solid #fff;
+         box-shadow:0 1px 2px rgba(27,23,20,.3)}
+  /* Aproximado: aro de tinta (dice "aproximado") con núcleo del color de su
+     zona (dice a cuál pertenece). Sin número, para no chocar con el conteo. */
+  .aro{position:absolute;left:0;top:0;width:14px;height:14px;border-radius:50%;
+       border:1.6px solid #2B2622;background:#fff;box-sizing:border-box}
+  .centro{position:absolute;left:5px;top:5px;width:4px;height:4px;border-radius:50%}
   .globo .h.aprox,.emg .h.aprox{color:#8A5A12;font-weight:600}
   /* Lista de las ofertas que comparten punto: sin esto, las de abajo no existen. */
   .rengs{max-height:186px;overflow-y:auto;border-top:1px solid var(--borde)}

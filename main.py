@@ -180,6 +180,21 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
               f"Bajas: {resumen['dados_de_baja']} · "
               f"Cambios de precio: {resumen['cambios_precio']}")
 
+        # La zona se asigna al dar de alta, asi que la base acumulaba reglas
+        # viejas: un anuncio guardado antes del guardian municipal conservaba
+        # su zona para siempre y el tablero contaba 97 donde el pipeline decia
+        # 98. Se revisa todo lo activo contra las reglas de HOY.
+        try:
+            rz = database.reclasificar_zonas()
+            if rz["reclasificados"]:
+                print(f"  Zonas reclasificadas: {rz['reclasificados']} de {rz['revisados']}")
+                for c in rz["detalle"][:10]:
+                    print(f"    {c['id_anuncio']}: {c['antes']}  ->  {c['ahora']}")
+            else:
+                print(f"  Zonas al dia: {rz['revisados']} revisados, sin cambios")
+        except Exception as e:  # noqa: BLE001 - no debe tumbar la corrida
+            print(f"  Aviso: no pude reclasificar zonas: {e}")
+
         # Regenerar el dashboard estatico. Con esto el HTML no necesita API:
         # basta subir la carpeta web/ a cualquier hosting.
         try:
