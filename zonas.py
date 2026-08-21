@@ -28,7 +28,7 @@ MUNICIPIO = RAIZ / "data" / "torreon_municipio.geojson"
 # Zona 6 no tiene poligono propio: es una REGLA — lo que esta dentro del
 # municipio y lejos de la mancha urbana. Definirla asi evita recortar geometrias
 # y la deja exacta por construccion.
-ZONA_PERIFERIA = "Zona 6 - Periferia Sur"
+ZONA_PERIFERIA = "Fuera de la mancha urbana"
 
 COLOR_ZONA = {
     "Zona 1 - Poniente y Centro Histórico": "#5B4B8A",

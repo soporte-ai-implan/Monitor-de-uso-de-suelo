@@ -27,7 +27,7 @@
             (location.protocol === 'http:' || location.protocol === 'https:' ? location.origin : '');
 
   var AZUL = '#1B5286', NARANJA = '#E95026', TINTA = '#1B1714',
-      GRIS = '#5C554D', MUTED = '#8A8178', REJILLA = '#EFEAE3';
+      GRIS = '#5C554D', MUTED = '#6F675E', REJILLA = '#EFEAE3';
 
   var mxn = function (v) { return '$' + Number(v).toLocaleString('es-MX', { maximumFractionDigits: 0 }); };
   var num = function (v) { return Number(v).toLocaleString('es-MX', { maximumFractionDigits: 0 }); };
@@ -164,20 +164,91 @@
             lons.reduce(function (a, b) { return a + b; }) / lons.length];
   }
 
+  /* ---------- simplificacion SOLO para dibujo ----------
+     Los poligonos de zona traen entre 178 y 289 vertices con escaloncitos de
+     codigo postal que a escala de ciudad son ruido. Se adelgazan para pintar.
+     OJO: el poligono de precision completa se queda intacto para clasificar
+     (GeoZonas.clasificar). Aqui no se decide en que zona cae nada; solo se
+     dibuja. Simplificar lo que clasifica moveria terrenos de zona. */
+  function distPuntoRecta(p, a, b) {
+    var dx = b[0] - a[0], dy = b[1] - a[1];
+    if (dx === 0 && dy === 0) return Math.hypot(p[0] - a[0], p[1] - a[1]);
+    var t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / (dx * dx + dy * dy);
+    t = Math.max(0, Math.min(1, t));
+    return Math.hypot(p[0] - (a[0] + t * dx), p[1] - (a[1] + t * dy));
+  }
+  function douglasPeucker(pts, tol) {
+    if (pts.length < 3) return pts;
+    var dmax = 0, idx = 0;
+    for (var i = 1; i < pts.length - 1; i++) {
+      var d = distPuntoRecta(pts[i], pts[0], pts[pts.length - 1]);
+      if (d > dmax) { dmax = d; idx = i; }
+    }
+    if (dmax > tol) {
+      var a = douglasPeucker(pts.slice(0, idx + 1), tol);
+      return a.slice(0, -1).concat(douglasPeucker(pts.slice(idx), tol));
+    }
+    return [pts[0], pts[pts.length - 1]];
+  }
+  var TOL_DIBUJO = 0.00035;   // ~35 m: quita el escaloncito, respeta la forma
+  function aligerar(geom) {
+    function anillo(r) {
+      var s = douglasPeucker(r, TOL_DIBUJO);
+      return s.length >= 4 ? s : r;   // nunca degenerar un anillo
+    }
+    if (geom.type === 'Polygon') {
+      return { type: 'Polygon', coordinates: geom.coordinates.map(anillo) };
+    }
+    if (geom.type === 'MultiPolygon') {
+      return { type: 'MultiPolygon',
+               coordinates: geom.coordinates.map(function (p) { return p.map(anillo); }) };
+    }
+    return geom;
+  }
+
+  // Atenua todo lo que queda FUERA del municipio: dice "esto es Torreon" sin
+  // tener que gritar una linea gruesa. Es un poligono del mundo con un hueco
+  // en forma de Torreon (el hueco va con el sentido de giro invertido).
+  function mascaraMunicipio() {
+    var f = (window.TORREON_MUNICIPIO.features || [])[0];
+    if (!f) return null;
+    var g = f.geometry;
+    var anillos = g.type === 'Polygon' ? [g.coordinates[0]]
+                                       : g.coordinates.map(function (p) { return p[0]; });
+    var mundo = [[-90, -200], [-90, 200], [90, 200], [90, -200]];
+    var huecos = anillos.map(function (r) {
+      return r.map(function (c) { return [c[1], c[0]]; }).reverse();
+    });
+    return L.polygon([mundo].concat(huecos), {
+      stroke: false, fill: true, fillColor: '#8A8178', fillOpacity: .13,
+      interactive: false
+    });
+  }
+
   function dibujarZonas() {
     capaZonas.clearLayers(); capaEtq.clearLayers();
 
     if (window.TORREON_MUNICIPIO) {
-      L.geoJSON(window.TORREON_MUNICIPIO, {
-        style: { color: MUTED, weight: 1.6, opacity: .65, dashArray: '5,4', fill: false }
+      var m = mascaraMunicipio();
+      if (m) m.addTo(capaZonas);
+      L.geoJSON({ type: 'FeatureCollection', features: (window.TORREON_MUNICIPIO.features || []).map(function (f) {
+        return { type: 'Feature', properties: {}, geometry: aligerar(f.geometry) };
+      }) }, {
+        style: { color: MUTED, weight: 1.1, opacity: .5, dashArray: '6,5', fill: false },
+        interactive: false
       }).addTo(capaZonas);
     }
 
     (window.TORREON_ZONAS.features || []).forEach(function (f) {
       var n = GeoZonas.nombreDe(f), col = GeoZonas.COLOR_ZONA[n] || MUTED;
-      L.geoJSON(f, { style: { color: col, weight: 2.6, opacity: .9, fill: false,
-                              lineJoin: 'round', lineCap: 'round' } }).addTo(capaZonas);
-      // El NOMBRE es lo que identifica la zona; el color solo refuerza.
+      var ligera = { type: 'Feature', properties: f.properties, geometry: aligerar(f.geometry) };
+      // Relleno tenue = la pertenencia se lee de un golpe, sin trazar la
+      // frontera con la vista. Antes iban 2.6px al 90% y sin relleno: la
+      // referencia le ganaba al dato.
+      L.geoJSON(ligera, { style: { color: col, weight: 4, opacity: .08, fillColor: col,
+                                   fillOpacity: .07, lineJoin: 'round' }, interactive: false }).addTo(capaZonas);
+      L.geoJSON(ligera, { style: { color: col, weight: 1.25, opacity: .5, fill: false,
+                                   lineJoin: 'round', lineCap: 'round' }, interactive: false }).addTo(capaZonas);
       var c = centroide(f);
       if (c) {
         L.marker(c, {
@@ -221,67 +292,167 @@
     });
   }
 
-  function dibujarPuntos(pts) {
-    capaPuntos.clearLayers();
-    pts.forEach(function (p) {
-      var col = p._color || MUTED, arch = p.activo === 0 || p.activo === false;
-      var icono = L.divIcon({
+  /* ---------- puntos del mapa ----------
+     Dos problemas que se arreglan aqui:
+
+     1) Los portales geocodifican todos los lotes de un fraccionamiento al
+        mismo punto. Medido: 41 de 98 anuncios compartian coordenada, y once
+        caian exactamente en la entrada de Las Trojes. Se dibujaba un marcador
+        por anuncio, encimados, asi que solo el ultimo era clicable: 41% del
+        inventario no existia para quien mira el mapa. Ahora se agrupan y el
+        globo lista todos los del punto.
+
+     2) Un anuncio "borde" no cae dentro de ninguna zona: se le asigna la mas
+        cercana (mediana 0.8 km, hasta 2.5 km). Se veia identico a uno medido
+        dentro. Ahora va hueco y con el anillo punteado, y dice a que distancia
+        quedo. Conserva el color de SU zona a proposito: ese anuncio si entra
+        en la mediana de esa zona, y pintarlo gris haria que el mapa dijera
+        una cosa y la grafica otra. El gris ya significa "limite municipal".  */
+
+  function esAprox(p) { return p._estado === 'borde' || p._estado === 'periferia'; }
+
+  function fichaDe(p) {
+    var v = ppm(p), meta = [];
+    if (p.m2) meta.push(num(p.m2) + ' m²');
+    if (p.precio) meta.push(mxn(p.precio) + ' total');
+    var dias = diasEnMercado(p);
+    var col = p._color || MUTED;
+    var arch = p.activo === 0 || p.activo === false;
+    return '<div class="emg"><div class="t">' +
+      '<span class="z" style="color:' + col + '">' + (p.zona || 'Sin zona') + '</span>' +
+      '<span class="chip">' + nombrePortal(p.fuente) + '</span></div>' +
+      (p.nombre_colonia ? '<div style="font-weight:600;font-size:.85rem;margin-bottom:5px">' + p.nombre_colonia + '</div>' : '') +
+      '<div class="pr">' + (v && ppmOk(v) ? mxn(v) + ' /m²' : (p.precio ? mxn(p.precio) : 'Precio no publicado')) + '</div>' +
+      '<div class="me">' + (meta.join(' · ') || 'Sin superficie') +
+      (p.fecha_publicacion ? '<br>Publicado: ' + p.fecha_publicacion + (dias != null ? ' (' + dias + ' días)' : '') : '') + '</div>' +
+      (esAprox(p) ? '<div class="h aprox">Ubicación aproximada: cae fuera de las zonas y se le asignó ' +
+                    (p.zona ? corta(p.zona) : 'la más cercana') +
+                    (p._distanciaKm != null ? ', a ' + p._distanciaKm.toFixed(1) + ' km' : '') + '</div>' : '') +
+      (arch ? '<div class="h">Oferta archivada: ya no aparece en el portal</div>' : '') +
+      (p.url ? '<a class="btn" href="' + p.url + '" target="_blank" rel="noopener noreferrer">Ver anuncio ↗</a>'
+             : '<span class="sutil">Sin liga al anuncio</span>') + '</div>';
+  }
+
+  function iconoPunto(p, cuantos) {
+    var col = p._color || MUTED;
+    var arch = p.activo === 0 || p.activo === false;
+    var aprox = esAprox(p);
+
+    if (cuantos > 1) {
+      // El numero es el dato: cuantas ofertas hay en ese punto.
+      return L.divIcon({
         className: 'mk',
-        html: '<div style="position:relative;width:14px;height:14px">' +
-              (arch ? '' : '<div class="anillo" style="background:' + col + '"></div>' +
-                           '<div class="anillo" style="background:' + col + ';animation-delay:900ms"></div>') +
-              '<div class="nucleo" style="background:' + col + (arch ? ';opacity:.45' : '') + '"></div></div>',
-        iconSize: [14, 14], iconAnchor: [7, 7]
+        html: '<div class="grupo" style="background:' + col + '">' + cuantos + '</div>',
+        iconSize: [26, 26], iconAnchor: [13, 13]
       });
-      var v = ppm(p), meta = [];
-      if (p.m2) meta.push(num(p.m2) + ' m²');
-      if (p.precio) meta.push(mxn(p.precio) + ' total');
-      if (p.nombre_colonia) meta.unshift(p.nombre_colonia);
-      var dias = diasEnMercado(p);
-      var portal = p.fuente === 'inmuebles24' ? 'Inmuebles24' : p.fuente === 'pincali' ? 'Pincali' : (p.fuente || '—');
-
-      var globo = '<span class="z" style="color:' + col + '">' + (p.zona || 'Sin zona') + '</span>' +
-        '<div class="p">' + (v && ppmOk(v) ? mxn(v) + ' /m²' : (p.precio ? mxn(p.precio) : 'Precio no publicado')) + '</div>' +
-        '<div class="m">' + (meta.join(' · ') || 'Sin datos de superficie') + '</div>' +
-        '<div class="m">' + portal + (dias != null ? ' · ' + dias + ' días publicado' : '') + '</div>' +
-        (p.ubicacion_precisa === false ? '<div class="h">Ubicación aproximada</div>' : '') +
-        (arch ? '<div class="h">Oferta archivada: ya no aparece en el portal</div>' : '') +
-        (p.url ? '<div class="h">Clic para abrir el anuncio</div>' : '');
-
-      var ficha = '<div class="emg"><div class="t">' +
-        '<span class="z" style="color:' + col + '">' + (p.zona || 'Sin zona') + '</span>' +
-        '<span class="chip">' + portal + '</span></div>' +
-        (p.nombre_colonia ? '<div style="font-weight:600;font-size:.85rem;margin-bottom:5px">' + p.nombre_colonia + '</div>' : '') +
-        '<div class="pr">' + (v && ppmOk(v) ? mxn(v) + ' /m²' : (p.precio ? mxn(p.precio) : 'Precio no publicado')) + '</div>' +
-        '<div class="me">' + (meta.join(' · ') || 'Sin superficie') +
-        (p.fecha_publicacion ? '<br>Publicado: ' + p.fecha_publicacion + (dias != null ? ' (' + dias + ' días)' : '') : '') + '</div>' +
-        (p.url ? '<a class="btn" href="' + p.url + '" target="_blank" rel="noopener noreferrer">Ver anuncio ↗</a>'
-               : '<span class="sutil">Sin liga al anuncio</span>') + '</div>';
-
-      L.marker([p.lat, p.lon], { icon: icono, riseOnHover: true })
-        .bindTooltip(globo, { className: 'globo', direction: 'top', offset: [0, -10], sticky: true, opacity: 1 })
-        .bindPopup(ficha).addTo(capaPuntos);
+    }
+    return L.divIcon({
+      className: 'mk',
+      html: '<div style="position:relative;width:14px;height:14px">' +
+            (arch || aprox ? '' : '<div class="anillo" style="background:' + col + '"></div>' +
+                                  '<div class="anillo" style="background:' + col + ';animation-delay:900ms"></div>') +
+            (aprox ? '<div class="aro" style="border-color:' + col + '"></div>'
+                   : '<div class="nucleo" style="background:' + col + (arch ? ';opacity:.45' : '') + '"></div>') +
+            '</div>',
+      iconSize: [14, 14], iconAnchor: [7, 7]
     });
   }
 
+  function dibujarPuntos(pts) {
+    capaPuntos.clearLayers();
+
+    // Agrupa por coordenada redondeada a ~11 m: eso junta tanto los duplicados
+    // exactos como los que quedan a unos metros y de todos modos se encimarian.
+    var grupos = {}, orden = [];
+    pts.forEach(function (p) {
+      if (p.lat == null || p.lon == null) return;
+      var k = p.lat.toFixed(4) + ',' + p.lon.toFixed(4);
+      if (!grupos[k]) { grupos[k] = []; orden.push(k); }
+      grupos[k].push(p);
+    });
+
+    orden.forEach(function (k) {
+      var g = grupos[k], p0 = g[0], n = g.length;
+      var mk = L.marker([p0.lat, p0.lon], { icon: iconoPunto(p0, n), riseOnHover: true });
+
+      if (n === 1) {
+        var v = ppm(p0), meta = [];
+        if (p0.m2) meta.push(num(p0.m2) + ' m²');
+        if (p0.precio) meta.push(mxn(p0.precio) + ' total');
+        if (p0.nombre_colonia) meta.unshift(p0.nombre_colonia);
+        var dias = diasEnMercado(p0);
+        var col = p0._color || MUTED;
+        var globo = '<span class="z" style="color:' + col + '">' + (p0.zona || 'Sin zona') + '</span>' +
+          '<div class="p">' + (v && ppmOk(v) ? mxn(v) + ' /m²' : (p0.precio ? mxn(p0.precio) : 'Precio no publicado')) + '</div>' +
+          '<div class="m">' + (meta.join(' · ') || 'Sin datos de superficie') + '</div>' +
+          '<div class="m">' + nombrePortal(p0.fuente) +
+            (dias != null ? ' · ' + dias + ' días publicado' : '') + '</div>' +
+          (esAprox(p0) ? '<div class="h">Ubicación aproximada</div>' : '') +
+          (p0.url ? '<div class="h">Clic para abrir el anuncio</div>' : '');
+        mk.bindTooltip(globo, { className: 'globo', direction: 'top', offset: [0, -10], sticky: true, opacity: 1 })
+          .bindPopup(fichaDe(p0));
+      } else {
+        var ppms = g.map(ppm).filter(function (x) { return x > 0 && ppmOk(x); });
+        var donde = p0.nombre_colonia || (p0.zona ? corta(p0.zona) : 'este punto');
+        mk.bindTooltip(
+          '<span class="z" style="color:' + (p0._color || MUTED) + '">' + donde + '</span>' +
+          '<div class="p">' + n + ' ofertas aquí</div>' +
+          '<div class="m">' + (ppms.length ? 'Mediana ' + mxn(mediana(ppms)) + ' /m²' : 'Sin precio por m²') + '</div>' +
+          '<div class="h">Clic para verlas una por una</div>',
+          { className: 'globo', direction: 'top', offset: [0, -16], sticky: true, opacity: 1 });
+        // El globo lista TODAS: es la unica forma de llegar a las que antes
+        // quedaban tapadas debajo del marcador de encima.
+        var lista = g.map(function (p) {
+          var v2 = ppm(p);
+          return '<a class="reng" ' + (p.url ? 'href="' + p.url + '" target="_blank" rel="noopener noreferrer"' : '') + '>' +
+            '<span class="r1">' + (p.m2 ? num(p.m2) + ' m²' : 'sin superficie') + '</span>' +
+            '<span class="r2">' + (v2 && ppmOk(v2) ? mxn(v2) + '/m²' : (p.precio ? mxn(p.precio) : '—')) + '</span>' +
+            (p.url ? '<span class="r3">↗</span>' : '') + '</a>';
+        }).join('');
+        mk.bindPopup(
+          '<div class="emg"><div class="t">' +
+          '<span class="z" style="color:' + (p0._color || MUTED) + '">' + (p0.zona || 'Sin zona') + '</span>' +
+          '<span class="chip">' + n + ' ofertas</span></div>' +
+          '<div style="font-weight:600;font-size:.85rem;margin-bottom:2px">' + donde + '</div>' +
+          '<div class="me" style="margin-bottom:8px">Los portales las publican en la misma coordenada' +
+          (esAprox(p0) ? ', y el punto es aproximado' : '') + '.</div>' +
+          '<div class="rengs">' + lista + '</div></div>',
+          { maxHeight: 260 });
+      }
+      mk.addTo(capaPuntos);
+    });
+  }
+
+  var aproximados = 0, dibujados = 0;
   function dibujarLeyenda() {
     var c = document.getElementById('leyenda');
     c.innerHTML = '';
-    if (window.TORREON_MUNICIPIO) {
-      var m = document.createElement('span');
-      m.className = 'it-ley';
-      m.innerHTML = '<span class="trazo" style="border-top:2px dashed ' + MUTED + '"></span>Límite municipal';
-      c.appendChild(m);
+    function it(html) {
+      var e = document.createElement('span'); e.className = 'it-ley'; e.innerHTML = html; c.appendChild(e);
     }
-    var nombres = (window.TORREON_ZONAS.features || []).map(GeoZonas.nombreDe);
-    nombres.push(GeoZonas.ZONA_PERIFERIA);
-    nombres.forEach(function (n) {
+    if (window.TORREON_MUNICIPIO) {
+      it('<span class="trazo" style="border-top:2px dashed ' + MUTED + '"></span>Límite municipal');
+    }
+    // Solo las zonas que existen como polígono. La categoría de reserva
+    // ("Fuera de la mancha urbana") no se dibuja: aparece solo si captura algo.
+    (window.TORREON_ZONAS.features || []).map(GeoZonas.nombreDe).forEach(function (n) {
       var col = GeoZonas.COLOR_ZONA[n] || MUTED, k = conteoZona[n] || 0;
-      var e = document.createElement('span');
-      e.className = 'it-ley';
-      e.innerHTML = '<span class="trazo" style="border-top-color:' + col + '"></span>' + corta(n) + ' <b>(' + k + ')</b>';
-      c.appendChild(e);
+      it('<span class="trazo" style="border-top-color:' + col + '"></span>' + corta(n) + ' <b>(' + k + ')</b>');
     });
+    var per = conteoZona[GeoZonas.ZONA_PERIFERIA] || 0;
+    if (per) {
+      it('<span class="trazo" style="border-top-color:' + GeoZonas.COLOR_ZONA[GeoZonas.ZONA_PERIFERIA] + '"></span>' +
+         GeoZonas.ZONA_PERIFERIA + ' <b>(' + per + ')</b>');
+    }
+    var na = document.getElementById('nota-aprox');
+    if (na) {
+      na.innerHTML = aproximados
+        ? 'En esta corrida son <b>' + num(aproximados) + '</b> de <b>' + num(dibujados) + '</b>.'
+        : '';
+    }
+    if (aproximados) {
+      it('<span class="pt-aprox"></span>Ubicación aproximada <b>(' + aproximados + ')</b>');
+    }
   }
 
   /* ================= indicadores ================= */
@@ -885,16 +1056,25 @@
       var act = th.dataset.col === orden.col;
       th.classList.toggle('act', act);
       th.querySelector('.flecha').textContent = act ? (orden.asc ? '↑' : '↓') : '↕';
+      th.setAttribute('aria-sort', act ? (orden.asc ? 'ascending' : 'descending') : 'none');
     });
   }
 
   function conectarTabla() {
     [].forEach.call(document.querySelectorAll('#tabla th[data-col]'), function (th) {
-      th.addEventListener('click', function () {
+      // Ordenar era solo con clic: quien navega con teclado no podía. Se
+      // anuncian como botones y responden a Enter y barra espaciadora.
+      th.setAttribute('role', 'button');
+      th.setAttribute('tabindex', '0');
+      function ordenar() {
         var c = th.dataset.col;
         if (orden.col === c) orden.asc = !orden.asc;
         else { orden.col = c; orden.asc = (c === 'nombre_colonia' || c === 'zona' || c === 'fuente'); }
         pagina = 1; pintarTabla();
+      }
+      th.addEventListener('click', ordenar);
+      th.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); ordenar(); }
       });
     });
     ['f-zona', 'f-seg', 'f-estado'].forEach(function (id) {
@@ -935,8 +1115,11 @@
   /* ================= arranque ================= */
   function render(anuncios, origen, fecha) {
     var r = GeoZonas.clasificarLista(anuncios, window.TORREON_ZONAS);
-    conteoZona = {};
-    r.dibujables.forEach(function (p) { if (p.zona) conteoZona[p.zona] = (conteoZona[p.zona] || 0) + 1; });
+    conteoZona = {}; aproximados = 0; dibujados = r.dibujables.length;
+    r.dibujables.forEach(function (p) {
+      if (p.zona) conteoZona[p.zona] = (conteoZona[p.zona] || 0) + 1;
+      if (esAprox(p)) aproximados++;
+    });
 
     intentar('mapa de calor', function () { dibujarCalor(r.dibujables); });
     intentar('puntos', function () { dibujarPuntos(r.dibujables); });

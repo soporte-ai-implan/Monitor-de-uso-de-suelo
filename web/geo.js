@@ -15,7 +15,7 @@
 
   // Zona 6 no tiene poligono propio: es una REGLA — lo que esta dentro del
   // municipio y lejos de la mancha urbana.
-  var ZONA_PERIFERIA = 'Zona 6 - Periferia Sur';
+  var ZONA_PERIFERIA = 'Fuera de la mancha urbana';
 
   // Colores del diseno aprobado, con dos re-escalonados por accesibilidad.
   //
@@ -30,7 +30,7 @@
     'Zona 3 - Centro-Norte': '#1B5286',
     'Zona 4 - Oriente': '#C6881E',
     'Zona 5 - Sur Oriente': '#1A7A47',
-    'Zona 6 - Periferia Sur': '#A85751'
+    'Fuera de la mancha urbana': '#A85751'
   };
 
   // Un punto fuera de todas las zonas pero a menos de esto se considera borde

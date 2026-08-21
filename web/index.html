@@ -13,15 +13,18 @@
 <style>
   :root{
     --crema:#FBF9F6; --papel:#FFFFFF; --tinta:#1B1714; --gris:#5C554D;
-    --muted:#8A8178; --borde:#E3DCD2; --punteado:#D8CFC2; --oscuro:#171310;
+    --muted:#6F675E; --borde:#E3DCD2; --punteado:#D8CFC2; --oscuro:#171310;
     --naranja:#E95026; --azul:#1B5286; --verde:#1A7A47; --ambar:#C6881E; --morado:#5B4B8A;
+    /* El naranja de marca da 3.7:1 sobre blanco: sirve para acentos y fondos
+       oscuros, no para texto chico. Las ligas usan este, que sí pasa AA. */
+    --liga:#C23B14;
     --sombra:0 1px 2px rgba(27,23,20,.06), 0 0 0 1px var(--borde);
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--crema);color:var(--tinta);
        font-family:'Libre Franklin',system-ui,sans-serif;font-size:15px;line-height:1.6}
   h1,h2,h3,h4{font-family:'Archivo',sans-serif;letter-spacing:-.01em;margin:0}
-  a{color:var(--naranja)}
+  a{color:var(--liga)}
 
   /* ---------- barra superior ---------- */
   .barra{background:var(--oscuro);padding:12px 40px;display:flex;align-items:center;
@@ -93,6 +96,9 @@
   .it-ley{display:inline-flex;align-items:center;gap:8px;font-size:.79rem;color:var(--gris)}
   .trazo{width:20px;height:0;border-top:3px solid;border-radius:2px;flex-shrink:0}
   .it-ley b{color:var(--tinta)}
+  /* Muestra de punto aproximado en la leyenda: hueco y punteado, igual que en el mapa. */
+  .pt-aprox{width:13px;height:13px;border-radius:50%;border:2px dashed var(--muted);
+            background:#fff;flex-shrink:0}
   .etq-zona{background:rgba(255,255,255,.82);border:1px solid var(--borde);border-radius:6px;
             padding:2px 7px;font-family:'Archivo',sans-serif;font-size:.62rem;font-weight:800;
             letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
@@ -148,6 +154,8 @@
     font-family:inherit;font-size:.82rem;background:var(--papel);color:var(--tinta)}
   .filtros input{min-width:210px}
   .env-tabla{overflow-x:auto;border:1px solid var(--borde);border-radius:12px}
+  table.tb th:focus-visible,.sw:focus-within,select:focus-visible,input:focus-visible,
+  button:focus-visible,a:focus-visible{outline:2px solid var(--azul);outline-offset:2px;border-radius:4px}
   table.tb{width:100%;border-collapse:collapse;font-size:.82rem;min-width:820px}
   table.tb th{background:var(--crema);color:var(--muted);font-weight:800;font-size:.66rem;
     text-transform:uppercase;letter-spacing:.07em;padding:12px 14px;text-align:left;
@@ -182,6 +190,11 @@
 
   /* ---------- pipeline ---------- */
   .paso-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:18px}
+  .nota-mapa{margin-top:18px;padding:18px 20px;background:var(--papel);border-radius:14px;
+             box-shadow:var(--sombra);border-left:3px solid var(--punteado)}
+  .nota-mapa h4{font-size:.9rem;font-weight:700;margin-bottom:8px}
+  .nota-mapa p{font-size:.79rem;color:var(--gris);line-height:1.65;margin:0 0 8px;max-width:82ch}
+  .nota-mapa p:last-child{margin-bottom:0}
   .paso{background:var(--papel);border-radius:14px;padding:20px;box-shadow:var(--sombra)}
   .paso .ico{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;
              justify-content:center;margin-bottom:13px}
@@ -205,6 +218,24 @@
   /* ---------- marcadores ---------- */
   @keyframes pulso{0%{transform:scale(.55);opacity:.6}70%{transform:scale(2.4);opacity:0}100%{transform:scale(2.4);opacity:0}}
   .mk{background:transparent!important;border:0!important}
+  /* Punto agrupado: el número es el dato, cuántas ofertas hay en esa coordenada. */
+  .grupo{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+         font-family:'Archivo',sans-serif;font-weight:800;font-size:.72rem;color:#fff;
+         border:2px solid #fff;box-shadow:0 1px 4px rgba(27,23,20,.35);cursor:pointer}
+  /* Punto aproximado: hueco y punteado. Conserva el color de SU zona porque
+     sí entra en la mediana de esa zona; el hueco es el que dice "aproximado". */
+  .aro{position:absolute;left:1px;top:1px;width:12px;height:12px;border-radius:50%;
+       border:2px dashed currentColor;background:rgba(255,255,255,.9)}
+  .globo .h.aprox,.emg .h.aprox{color:#8A5A12;font-weight:600}
+  /* Lista de las ofertas que comparten punto: sin esto, las de abajo no existen. */
+  .rengs{max-height:186px;overflow-y:auto;border-top:1px solid var(--borde)}
+  .reng{display:flex;align-items:center;gap:9px;padding:7px 2px;font-size:.78rem;
+        border-bottom:1px solid var(--borde);color:var(--tinta);text-decoration:none}
+  .reng:last-child{border-bottom:0}
+  .reng:hover{background:var(--crema)}
+  .reng .r1{flex:1;color:var(--gris)}
+  .reng .r2{font-weight:700;font-family:'Archivo',sans-serif}
+  .reng .r3{color:var(--naranja);font-weight:700}
   .anillo{position:absolute;inset:0;border-radius:50%;animation:pulso 1800ms ease-out infinite}
   .nucleo{position:absolute;left:3px;top:3px;width:8px;height:8px;border-radius:50%;
           border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
@@ -481,6 +512,29 @@
       <h4>Verificación humana (HITL)</h4>
       <p>Antes de publicar, una persona revisa el resultado (<b>human-in-the-loop</b>): que las cifras cuadren y que ningún dato atípico se haya colado.</p>
     </div>
+  </div>
+
+  <div class="nota-mapa">
+    <h4>Cómo leer el mapa</h4>
+    <p>
+      Las <b>cinco zonas de color</b> son la mancha urbana. La <b>línea gris punteada</b> no es una
+      zona: es el <b>límite municipal oficial</b>, el que decide qué cuenta como Torreón. Va en gris
+      y punteada a propósito, para que se lea como referencia y no compita con los datos; lo que
+      queda por fuera aparece atenuado.
+    </p>
+    <p>
+      Los <b>puntos huecos con anillo punteado</b> caen dentro del municipio pero fuera de las cinco
+      zonas: ejidos, reservas y poblados como La Partida, donde no hay zonificación urbana. No se les
+      inventa una zona ni se les mueven las coordenadas: se les asigna la <b>más cercana</b> y el
+      globo dice a cuántos kilómetros quedó. Conservan el color de esa zona porque sí entran en su
+      mediana; el hueco es el aviso de que esa pertenencia es <b>aproximada, no medida</b>.
+      <span id="nota-aprox"></span>
+    </p>
+    <p>
+      Un <b>punto con número</b> son varias ofertas en la misma coordenada. Los portales publican
+      todos los lotes de un fraccionamiento en un solo pin; el número dice cuántas hay y el clic
+      las lista una por una.
+    </p>
   </div>
 
   <section class="tarjeta" style="margin-top:26px">
