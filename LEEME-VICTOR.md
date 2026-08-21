@@ -31,11 +31,31 @@ para cPanel no hace falta.
 
 ```bash
 cd ~ && git clone https://github.com/soporte-ai-implan/Monitor-Terrenos-Demo.git monitor
-cd ~/monitor && python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+cd ~/monitor && bash tools/instalar_cpanel.sh
 ```
 
-Sin dependencias binarias a propósito: el point-in-polygon está a mano en
-`zonas.py` justo para no arrastrar shapely/GDAL.
+El script comprueba el terreno **antes** de tocar nada —versión de Python,
+salida a internet hacia Apify y Nominatim, permisos de escritura— y se detiene
+con el motivo si algo falta, en vez de instalar a medias y fallar tres pasos
+después. Si pasa, crea el venv, instala dependencias, corre las 5 suites y te
+imprime la línea de cron y el symlink ya con tus rutas.
+
+La comprobación de salida a internet es la que más se pasa por alto: muchos
+hostings compartidos la bloquean, y sin ella el pipeline no puede llamar a
+Apify aunque Python funcione. Si eso falla, el camino es otro (el C de
+`docs/despliegue_cpanel.md`) y conviene saberlo en el minuto uno.
+
+Si prefieres a mano, es lo de siempre:
+
+```bash
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+```
+
+El código compila desde **Python 3.8**, aunque el objetivo es 3.9 o mayor. Sin
+dependencias binarias a propósito.
+
+El point-in-polygon está escrito a mano en `zonas.py` justo para no arrastrar
+shapely ni GDAL, que en hosting compartido son la principal fuente de dolor.
 
 ### El `.env`
 

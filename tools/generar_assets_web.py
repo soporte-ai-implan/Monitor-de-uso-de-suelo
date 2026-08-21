@@ -8,6 +8,8 @@ la API esta arriba simplemente sobreescribe los puntos.
 
 Uso:  python tools/generar_assets_web.py
 """
+from __future__ import annotations
+
 import json
 import pathlib
 
