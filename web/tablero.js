@@ -38,11 +38,11 @@
   function ppmOk(v) { return v >= PPM_MIN && v <= PPM_MAX; }
 
   var SEGMENTOS = [
-    { nombre: 'Lote chico', rango: 'menos de 300 m²', lo: 0, hi: 300 },
-    { nombre: 'Lote medio', rango: '300 a 600 m²', lo: 300, hi: 600 },
-    { nombre: 'Lote grande', rango: '600 a 1,500 m²', lo: 600, hi: 1500 },
-    { nombre: 'Predio', rango: '1,500 a 10,000 m²', lo: 1500, hi: 10000 },
-    { nombre: 'Rústico/ejidal', rango: 'más de 10,000 m²', lo: 10000, hi: Infinity }
+    { nombre: 'Predio menor de 300 m²', corto: '< 300 m²', rango: 'menos de 300 m²', lo: 0, hi: 300 },
+    { nombre: 'Predio de 300 a 600 m²', corto: '300 a 600 m²', rango: '300 a 600 m²', lo: 300, hi: 600 },
+    { nombre: 'Predio de 600 a 1,500 m²', corto: '600 a 1,500 m²', rango: '600 a 1,500 m²', lo: 600, hi: 1500 },
+    { nombre: 'Predio de 1,500 a 10,000 m²', corto: '1,500 a 10,000 m²', rango: '1,500 a 10,000 m²', lo: 1500, hi: 10000 },
+    { nombre: 'Predio mayor a 10,000 m²', corto: '> 10,000 m²', rango: 'más de 10,000 m²', lo: 10000, hi: Infinity }
   ];
 
   function mediana(v) {
@@ -510,7 +510,7 @@
     pts.forEach(function (p) { if (p.fuente) portales[p.fuente] = 1; });
     var np = Object.keys(portales).length;
     document.getElementById('k-total-pie').textContent =
-      res.fuera ? (res.fuera + ' descartado(s) fuera del municipio')
+      res.fuera ? (res.fuera + ' descartado(s) por ubicarse fuera del municipio')
                 : (np === 1 ? 'en 1 portal con datos hoy' : 'en ' + np + ' portales monitoreados');
 
     var todos = pts.map(ppm).filter(function (v) { return v > 0; });
@@ -542,7 +542,7 @@
     if (r.periferia) partes.push('<b>' + num(r.periferia) + '</b> quedan en la Periferia Sur');
     var t = 'De ' + num(ubicados + (r.fuera || 0) + (r.sinCoords || 0)) + ' anuncios procesados: ' +
             partes.join('; ') + '.';
-    if (r.fuera) t += ' <b>' + num(r.fuera) + '</b> se descarta(n) por caer fuera del municipio.';
+    if (r.fuera) t += ' <b>' + num(r.fuera) + '</b> se descarta(n) por ubicarse fuera del municipio.';
     if (r.sinCoords) t += ' <b>' + num(r.sinCoords) + '</b> sin coordenadas.';
     c.className = 'dato';
     c.innerHTML = t;
@@ -551,17 +551,30 @@
   function pintarSegmentos(pts) {
     var c = document.getElementById('segmentos');
     c.innerHTML = '';
+    // Base del índice: la mediana de TODA la oferta. Cada segmento se expresa
+    // contra ella, así se lee de un golpe cuál va arriba y cuál abajo del
+    // mercado sin tener que comparar pesos contra pesos.
+    var todos = pts.map(ppm).filter(ppmOk);
+    var base = todos.length ? mediana(todos) : null;
+
     SEGMENTOS.forEach(function (s) {
       var v = pts.filter(function (p) {
         var m = Number(p.m2);
         return m >= s.lo && m < s.hi && ppmOk(ppm(p));
       }).map(ppm);
       var pocos = v.length > 0 && v.length < 10;
+      var med = v.length ? mediana(v) : null;
+      var idx = (med != null && base) ? Math.round(med / base * 100) : null;
+
       var d = document.createElement('div');
       d.className = 'seg' + (pocos ? ' pocos' : '');
-      d.innerHTML = '<div class="n1">' + s.nombre + '</div><div class="n2">' + s.rango + '</div>' +
-        '<div class="n3">' + (v.length ? mxn(mediana(v)) : '—') + '</div>' +
+      d.innerHTML = '<div class="n1">' + s.nombre + '</div>' +
+        '<div class="n3">' + (med != null ? mxn(med) : '—') + '</div>' +
         '<div class="n4">mediana por m²</div>' +
+        (idx != null
+          ? '<div class="idx' + (idx >= 100 ? ' alto' : ' bajo') + '">Índice ' + idx +
+            '<span>base 100 = mediana general</span></div>'
+          : '') +
         '<span class="n5">n = ' + v.length + (pocos ? ' · muestra chica' : '') + '</span>';
       c.appendChild(d);
     });
@@ -795,6 +808,16 @@
       el.style.opacity = '0';
       charts[id].reset();
       mirilla.observe(el);
+      // Red de seguridad: si nadie baja (impresión, captura de pantalla, un
+      // navegador que no dispara el observador), a los 4 s se destapa igual.
+      // Una gráfica invisible es peor que una que no animó.
+      setTimeout(function () {
+        if (yaCorrio[id]) return;
+        yaCorrio[id] = 1;
+        el.style.opacity = '1';
+        if (charts[id]) charts[id].update();
+        liquidoTrasEntrada(id);
+      }, 4000);
     });
   }
 
@@ -923,7 +946,9 @@
     nz.forEach(function (z) {
       var v = pts.filter(function (p) { return p.zona === z && ppmOk(ppm(p)); }).map(ppm);
       if (!v.length) return;
-      et.push(corta(z)); va.push(Math.round(mediana(v)));
+      // Chart.js acepta un arreglo por etiqueta y lo pinta en renglones. Así
+      // "Poniente y Centro Histórico" deja de necesitar el eje en diagonal.
+      et.push(corta(z).split(' y ')); va.push(Math.round(mediana(v)));
       cz.push((GeoZonas.COLOR_ZONA && GeoZonas.COLOR_ZONA[z]) || AZUL);
     });
     dibujar('gZonas', {
@@ -934,7 +959,9 @@
         animation: ANIM, animations: DESDE_BASE, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: mxn },
                    tooltip: { callbacks: { label: function (c) { return mxn(c.parsed.y) + ' /m² (mediana)'; } } } },
-        scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
+        scales: { x: { grid: { display: false },
+                       ticks: { color: GRIS, font: { size: 10, weight: '600' },
+                                maxRotation: 0, minRotation: 0, autoSkip: false } },
                   y: { display: false, beginAtZero: true } }
       })
     });
@@ -945,7 +972,7 @@
     });
     dibujar('gTamano', {
       type: 'bar', plugins: [etiquetas, liquido],
-      data: { labels: SEGMENTOS.map(function (s) { return s.nombre; }),
+      data: { labels: SEGMENTOS.map(function (s) { return s.corto; }),
               datasets: [{ data: cnt, backgroundColor: relleno(AZUL),
                            borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
@@ -985,10 +1012,6 @@
     //    hueco en la dona, no como una barra sola que no dice nada.
     var pp = {};
     pts.forEach(function (p) { var f = p.fuente || 'sin dato'; pp[f] = (pp[f] || 0) + 1; });
-    (Object.keys((window.DATOS_MONITOR && window.DATOS_MONITOR.fuentes) || {})).forEach(function (k) {
-      var d = window.DATOS_MONITOR.fuentes[k];
-      if (d && d.estatus !== 'descartado' && pp[k] == null) pp[k] = 0;
-    });
     var ks = Object.keys(pp).sort(function (a, b) { return pp[b] - pp[a]; });
     var COLP = [AZUL, NARANJA, '#1A7A47', '#C6881E', '#5B4B8A'];
     dibujar('gPortales', {

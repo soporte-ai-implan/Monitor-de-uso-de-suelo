@@ -113,6 +113,14 @@
   .seg .n2{font-size:.7rem;color:var(--muted);margin-bottom:11px}
   .seg .n3{font-family:'Archivo',sans-serif;font-weight:800;font-size:1.4rem;line-height:1}
   .seg .n4{font-size:.72rem;color:var(--gris);margin-top:4px}
+  /* Índice del segmento contra la mediana general: dice si va arriba o abajo
+     del mercado sin obligar a comparar pesos contra pesos. */
+  .idx{display:inline-flex;flex-direction:column;margin-top:8px;padding:5px 9px;border-radius:8px;
+       font-family:'Archivo',sans-serif;font-weight:800;font-size:.78rem;line-height:1.15}
+  .idx span{font-family:'Libre Franklin',sans-serif;font-weight:600;font-size:.6rem;
+            letter-spacing:.02em;opacity:.75;margin-top:2px}
+  .idx.alto{background:rgba(26,122,71,.11);color:#146037}
+  .idx.bajo{background:rgba(194,59,20,.10);color:#9B2F10}
   .seg .n5{display:inline-block;margin-top:10px;font-size:.67rem;font-weight:700;
            padding:3px 9px;border-radius:20px;background:#EFEAE2;color:var(--gris)}
   .seg.pocos{border-style:dashed}
@@ -290,9 +298,7 @@
         Inteligencia de mercado · Suelo urbano
       </div>
       <h1>Monitor de suelo</h1>
-      <p>Seguimiento continuo de la oferta publicada en portales inmobiliarios, actualmente
-         <span id="portales-vivos">Inmuebles24</span>. Una lectura del <b>precio de oferta</b>
-         del suelo formal en Torreón.</p>
+      <p>Seguimiento continuo de la oferta publicada en portales inmobiliarios.</p>
     </div>
     <div class="chip-fecha">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -359,11 +365,6 @@
 
   <section class="tarjeta">
     <h2>Inteligencia de mercado de suelo</h2>
-    <p class="sutil" style="margin:5px 0 0">
-      Una sola cifra para toda la oferta engaña a los dos extremos: el lote urbano chico y el
-      predio rústico no juegan en el mismo mercado. La <b>n</b> es el número de terrenos en cada
-      segmento, y donde es baja la mediana se mueve con un solo anuncio nuevo.
-    </p>
     <div class="seg-grid" id="segmentos"></div>
   </section>
 
@@ -376,7 +377,6 @@
     <div class="g-grid">
       <div class="g-panel">
         <h3>Precio mediano de oferta por zona</h3>
-        <p class="desc">Pesos por m². La zona con menos anuncios tiene la mediana menos estable.</p>
         <div class="lienzo"><canvas id="gZonas"></canvas></div>
       </div>
       <div class="g-panel">
@@ -475,7 +475,7 @@
       <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.2-8.6"/><path d="M21 3v6h-6"/></svg></div>
       <div class="num">Paso 2</div>
       <h4>Extracción automatizada</h4>
-      <p>Actores de <b>Apify</b> recorren <a href="https://www.inmuebles24.com/terrenos-en-venta-en-torreon.html" target="_blank" rel="noopener">Inmuebles24, terrenos en venta en Torreón</a> y <a href="https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-coahuila" target="_blank" rel="noopener">Pincali, terrenos en venta en Torreón, Coahuila</a>. De cada anuncio toman precio, superficie, colonia, coordenadas, fecha y liga original.</p>
+      <p>Por ahora corre <b>un solo actor</b> de <b>Apify</b>, sobre <a href="https://www.inmuebles24.com/terrenos-en-venta-en-torreon.html" target="_blank" rel="noopener">Inmuebles24, terrenos en venta en Torreón</a>. De cada anuncio toma precio, superficie, colonia, coordenadas, fecha y liga original.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
@@ -499,7 +499,7 @@
       <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l4 4L14 9"/><path d="M10 16l4 4 7-11"/></svg></div>
       <div class="num">Paso 6</div>
       <h4>Verificación cruzada</h4>
-      <p>Un predio anunciado en <b>dos portales a la vez</b> es la señal más fuerte de que la oferta es real. El suelo ejidal se confirma contra <b>IRyC</b> (escrituras) y <b>RAN</b> (ejidos), con re-auditoría <b>semestral</b>. El cruce automático entre portales aún no está implementado.</p>
+      <p>Un predio anunciado en <b>dos portales a la vez</b> es la señal más fuerte de que la oferta es real. El suelo ejidal se confirma contra el <b>Registro Agrario Nacional</b> y las escrituras contra el <b>Registro Catastral</b>. El cruce automático entre portales aún no está implementado.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
