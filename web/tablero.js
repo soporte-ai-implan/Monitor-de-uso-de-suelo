@@ -67,6 +67,33 @@
     return d.toLocaleDateString('es-MX', { day: '2-digit', month: 'long', year: 'numeric' }) +
            ', ' + d.toLocaleTimeString('es-MX', { hour: '2-digit', minute: '2-digit' });
   }
+  // La fecha sale del dato, no del reloj: es cuando corrio el pipeline. Pero
+  // una fecha sola no distingue "de hoy" de "de hace tres semanas", y un dato
+  // viejo mostrado sin aviso se lee como vigente. Aqui se dice la antiguedad.
+  function sellarFecha(fecha) {
+    var el = document.getElementById('sello-fecha');
+    if (!el) return;
+    el.textContent = fechaLegible(fecha);
+
+    var chip = el.closest ? el.closest('.chip-fecha') : null;
+    var vieja = document.getElementById('sello-edad');
+    if (vieja && vieja.parentNode) vieja.parentNode.removeChild(vieja);
+    if (chip) chip.classList.remove('rancio');
+
+    var d = fecha ? new Date(fecha) : null;
+    if (!d || isNaN(d.getTime())) return;
+    var dias = Math.floor((Date.now() - d.getTime()) / 86400000);
+    if (dias < 0) dias = 0;
+
+    var txt = dias === 0 ? 'hoy' : dias === 1 ? 'ayer' : 'hace ' + dias + ' días';
+    var s = document.createElement('span');
+    s.id = 'sello-edad';
+    s.className = 'edad' + (dias >= 2 ? ' rancia' : '');
+    s.textContent = dias >= 2 ? txt + ' · sin actualizar' : txt;
+    el.parentNode.appendChild(s);
+    if (chip && dias >= 2) chip.classList.add('rancio');
+  }
+
   function segDe(p) {
     var m = Number(p.m2);
     for (var i = 0; i < SEGMENTOS.length; i++) {
@@ -110,32 +137,9 @@
   var NOMBRE_PORTAL = { inmuebles24: 'Inmuebles24', pincali: 'Pincali', vivanuncios: 'Vivanuncios' };
   function nombrePortal(k) { return NOMBRE_PORTAL[k] || k; }
 
-  // Un portal puede terminar la corrida "bien" y devolver cero anuncios. Si el
-  // tablero no lo dice, la caída de oferta se lee como mercado: "bajó la oferta
-  // de suelo" cuando en realidad se cayó un scraper. Esto lo hace visible.
-  function avisarFuentes(fuentes) {
-    var c = document.getElementById('aviso-fuentes');
-    var caidas = [];
-    Object.keys(fuentes || {}).forEach(function (k) {
-      var e = (fuentes[k] || {}).estatus;
-      if (e === 'vacia' || e === 'error') caidas.push(nombrePortal(k));
-    });
-
-    if (!caidas.length) { if (c) c.parentNode.removeChild(c); return; }
-
-    if (!c) {
-      c = document.createElement('div');
-      c.id = 'aviso-fuentes';
-      c.className = 'aviso';
-      c.style.cssText = 'background:#FFF6E5;border-color:#EFD9AE;border-left-color:#C6881E;color:#7A5410';
-      colgarAviso(c);
-    }
-    c.innerHTML = '<b>Cobertura incompleta en esta corrida.</b> ' +
-      (caidas.length === 1 ? 'El portal ' : 'Los portales ') + caidas.join(' y ') +
-      (caidas.length === 1 ? ' no devolvió' : ' no devolvieron') + ' anuncios. ' +
-      'Las cifras de abajo cubren solo el resto de las fuentes; ' +
-      'la oferta de ese portal <b>no se dio por vendida</b>, quedó en pausa hasta que vuelva a responder.';
-  }
+  // El letrero de "cobertura incompleta" se retiro a peticion. La caida de un
+  // portal sigue siendo visible en la dona de "Oferta por portal": aparece en
+  // la leyenda con cero anuncios en vez de desaparecer de la grafica.
 
   /* ================= mapa ================= */
   var mapa = L.map('mapa', { scrollWheelZoom: false, zoomControl: true });
@@ -400,11 +404,72 @@
     charts[id] = new Chart(el, cfg);
   }
 
-  // Animacion compartida: entrada escalonada, para que el tablero se sienta
-  // vivo al cargar y al refrescar con una corrida nueva.
-  var ANIM = { duration: 1100, easing: 'easeOutQuart', delay: function (c) {
-    return (c.type === 'data' && c.mode === 'default') ? c.dataIndex * 55 : 0;
-  } };
+  var REDUCIR = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  // Las barras y la linea crecen desde la base, no aparecen ya dibujadas: sube
+  // el nivel como agua, con un retardo por columna que lo vuelve una ola.
+  var ANIM = REDUCIR ? false : {
+    duration: 1500, easing: 'easeOutQuart',
+    delay: function (c) {
+      return (c.type === 'data' && c.mode === 'default') ? c.dataIndex * 110 : 0;
+    }
+  };
+  // El origen del recorrido: el cero del eje, o el piso del area si el eje
+  // no arranca en cero (la historica va recortada al rango de la serie).
+  var DESDE_BASE = REDUCIR ? undefined : {
+    y: {
+      from: function (c) {
+        if (c.type !== 'data' || c.mode !== 'default') return undefined;
+        var s = c.chart.scales.y;
+        if (!s) return undefined;
+        return s.getPixelForValue(s.min > 0 ? s.min : 0);
+      }
+    }
+  };
+
+  // Chart.js anima al construirse. Si el tablero se pinta completo al cargar,
+  // las graficas de abajo terminan su recorrido antes de que nadie baje a
+  // verlas. Esto lo retiene y lo dispara cuando cada una entra a pantalla.
+  var yaCorrio = {};
+  var mirilla = null;
+  function destaparGraficas() {
+    Object.keys(charts).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (el) el.style.opacity = '1';
+    });
+  }
+  function observarGraficas() {
+    // Sin observador o con movimiento reducido: todo visible y sin trucos.
+    if (REDUCIR || !('IntersectionObserver' in window)) { destaparGraficas(); return; }
+    if (!mirilla) {
+      mirilla = new IntersectionObserver(function (filas) {
+        filas.forEach(function (f) {
+          if (!f.isIntersecting) return;
+          var id = f.target.id, ch = charts[id];
+          mirilla.unobserve(f.target);
+          if (!ch) { f.target.style.opacity = '1'; return; }
+          if (yaCorrio[id]) return;
+          yaCorrio[id] = 1;
+          ch.reset();                      // vuelve al piso
+          f.target.style.opacity = '1';    // ya sin pixeles viejos que delaten
+          ch.update();                     // y sube
+        });
+      }, { threshold: .3 });
+    }
+    Object.keys(charts).forEach(function (id) {
+      var el = document.getElementById(id);
+      if (!el || yaCorrio[id]) return;
+      // Si ya se ve al cargar, que anime de inmediato; si no, al llegar.
+      var r = el.getBoundingClientRect();
+      if (r.top < (window.innerHeight || 0) && r.bottom > 0) { yaCorrio[id] = 1; return; }
+      // El canvas guarda los pixeles de su ultimo dibujo, asi que al bajar se
+      // veria la grafica ya terminada un instante antes de caer al piso. Se
+      // mantiene invisible hasta que le toca subir.
+      el.style.opacity = '0';
+      charts[id].reset();
+      mirilla.observe(el);
+    });
+  }
 
   // Degradado vertical: el color pleno arriba, translucido abajo.
   function vGrad(area, ctx, hex) {
@@ -475,11 +540,11 @@
     if (pie) {
       pie.innerHTML = s.origen === 'indice'
         ? 'Serie registrada por el propio monitor en cada corrida.'
-        : 'Serie reconstruida del corpus actual, no un índice de precios: solo entra la oferta que <b>sigue ' +
-          'publicada</b>, así que los meses viejos muestran lo que no se ha vendido.' +
-          (flojos ? ' Los puntos huecos (<b>' + flojos + '</b> de ' + filas.length + ') se apoyan en menos de ' +
-            N_FIRME + ' anuncios: ahí la línea es indicativa, no una tendencia.' : '') +
-          ' Cuando el pipeline acumule corridas diarias, esta gráfica pasa sola al índice real.';
+        : 'No es un índice de precios: solo entra la oferta que <b>sigue publicada</b>, así que los meses ' +
+          'viejos muestran lo que no se ha vendido.' +
+          (flojos ? ' Los puntos huecos (<b>' + flojos + '</b> de ' + filas.length + ') traen menos de ' +
+            N_FIRME + ' anuncios.' : '') +
+          ' Con corridas diarias acumuladas pasa sola al índice real.';
     }
 
     var vals = filas.map(function (f) { return f.v; });
@@ -502,7 +567,7 @@
         }
       }] },
       options: opciones({
-        animation: { duration: 1500, easing: 'easeOutQuart' },
+        animation: ANIM, animations: DESDE_BASE,
         plugins: { legend: { display: false }, tooltip: { callbacks: {
           label: function (c) { return mxn(c.parsed.y) + ' /m² (mediana)'; },
           afterLabel: function (c) {
@@ -539,7 +604,7 @@
       data: { labels: et, datasets: [{ data: va, backgroundColor: relleno2(cz),
               borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
-        animation: ANIM, layout: { padding: { top: 22 } },
+        animation: ANIM, animations: DESDE_BASE, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: mxn },
                    tooltip: { callbacks: { label: function (c) { return mxn(c.parsed.y) + ' /m² (mediana)'; } } } },
         scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
@@ -557,7 +622,7 @@
               datasets: [{ data: cnt, backgroundColor: relleno(AZUL),
                            borderRadius: 10, borderSkipped: false, maxBarThickness: 56 }] },
       options: opciones({
-        animation: ANIM, layout: { padding: { top: 22 } },
+        animation: ANIM, animations: DESDE_BASE, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: num },
                    tooltip: { callbacks: { label: function (c) { return c.parsed.y + ' terrenos · ' + SEGMENTOS[c.dataIndex].rango; } } } },
         scales: { x: { grid: { display: false }, ticks: { color: GRIS, font: { size: 10, weight: '600' } } },
@@ -580,7 +645,7 @@
                      borderRadius: 10, borderSkipped: false, maxBarThickness: 46 }]
       },
       options: opciones({
-        animation: ANIM, layout: { padding: { top: 22 } },
+        animation: ANIM, animations: DESDE_BASE, layout: { padding: { top: 22 } },
         plugins: { legend: { display: false }, etiquetas: { fmt: num },
                    tooltip: { callbacks: { label: function (c) {
                      return c.parsed.y + ' terrenos publicados ese mes, aún en venta'; } } } },
@@ -607,7 +672,8 @@
                            borderWidth: 3, borderColor: '#fff', hoverOffset: 10, spacing: 2 }] },
       options: {
         responsive: true, maintainAspectRatio: false, cutout: '66%',
-        animation: { duration: 1200, easing: 'easeOutQuart', animateRotate: true },
+        animation: REDUCIR ? false : { duration: 1500, easing: 'easeOutQuart',
+                    animateRotate: true, animateScale: true },
         plugins: {
           legend: { position: 'bottom', labels: { padding: 14, boxWidth: 9, boxHeight: 9,
                     usePointStyle: true, font: { size: 11 } } },
@@ -638,6 +704,9 @@
 
     // 5) la historica, a lo ancho
     pintarTendencia(pts);
+
+    // Y que cada una espere su turno en pantalla.
+    observarGraficas();
   }
 
   /* ================= tabla ================= */
@@ -770,7 +839,7 @@
       TODOS = r.dibujables; llenarFiltros(TODOS); conectarTabla(); pintarTabla();
     });
 
-    document.getElementById('sello-fecha').textContent = fechaLegible(fecha);
+    sellarFecha(fecha);
     if (r.resumen.fuera) console.warn('Fuera del municipio (no dibujados):', r.descartados);
   }
 
@@ -788,7 +857,6 @@
       nd.innerHTML = 'Datos <b>reales</b> del pipeline: <b>' + (lista.length - arch) + '</b> ofertas activas' +
         (arch ? ' y <b>' + arch + '</b> archivadas' : '') + via;
     }
-    intentar('aviso de fuentes', function () { avisarFuentes(fuentes); });
     render(lista, 'pipeline', fecha);
   }
 

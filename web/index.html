@@ -115,6 +115,11 @@
   .g-panel h3{margin-bottom:4px;font-size:.98rem}
   .g-panel .desc{font-size:.75rem;color:var(--muted);margin:0 0 14px}
   .lienzo{position:relative;height:250px}
+  .lienzo canvas{transition:opacity .25s ease}
+  /* Antigüedad del dato, pegada al sello de fecha. */
+  .edad{margin-left:8px;font-size:.72rem;font-weight:700;color:var(--muted)}
+  .edad.rancia{color:var(--naranja)}
+  .chip-fecha.rancio{border-color:#F3D9CC;background:#FFF8F4}
   .lienzo-alto{height:290px}
   /* La historica va a lo ancho: es una serie temporal, no cabe en media reja. */
   .g-ancho{margin-top:22px;padding-top:22px;border-top:1px dashed var(--punteado)}
@@ -243,7 +248,7 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>
         Inteligencia de mercado · Suelo urbano
       </div>
-      <h1>Monitor de suelo en tiempo real</h1>
+      <h1>Monitor de suelo</h1>
       <p>Seguimiento continuo de la oferta publicada en portales inmobiliarios, actualmente Inmuebles24
          y Pincali. Una lectura del <b>precio de oferta</b> del suelo formal en Torreón.</p>
     </div>
@@ -422,55 +427,55 @@
       <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
       <div class="num">Paso 1</div>
       <h4>Alcance de esta versión</h4>
-      <p>Mide <b>precio de oferta</b>, lo que el vendedor pide, no el precio de cierre: no sustituye un avalúo. Cubre <b>2 portales</b>, no el 100% del mercado. El <b>límite municipal oficial</b> define qué es Torreón; las 6 zonas clasifican dentro de él. <span id="nota-datos"></span></p>
+      <p>Mide <b>precio de oferta</b> —lo que el vendedor pide, no el de cierre—: no sustituye un avalúo. Cubre <b>2 portales</b>, no todo el mercado. <span id="nota-datos"></span></p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.2-8.6"/><path d="M21 3v6h-6"/></svg></div>
       <div class="num">Paso 2</div>
       <h4>Extracción automatizada</h4>
-      <p>Los actores de <b>Apify</b> scrapean las siguientes páginas de la oferta inmobiliaria: <a href="https://www.inmuebles24.com/terrenos-en-venta-en-torreon.html" target="_blank" rel="noopener"><b>Inmuebles24</b> — terrenos en venta en Torreón</a> y <a href="https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-coahuila" target="_blank" rel="noopener"><b>Pincali</b> — terrenos en venta en Torreón, Coahuila</a>. Capturan de cada anuncio: precio, superficie, colonia, coordenadas, fecha y liga original.</p>
+      <p>Actores de <b>Apify</b> recorren <a href="https://www.inmuebles24.com/terrenos-en-venta-en-torreon.html" target="_blank" rel="noopener">Inmuebles24</a> y <a href="https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-coahuila" target="_blank" rel="noopener">Pincali</a>. De cada anuncio toman precio, superficie, colonia, coordenadas, fecha y liga original.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
       <div class="num">Paso 3</div>
       <h4>Normalización y geolocalización</h4>
-      <p>Un pipeline en <b>Python</b> unifica los formatos de cada portal, completa coordenadas con <b>Nominatim</b> y asigna zona contra el <b>límite municipal oficial</b>.</p>
+      <p><b>Python</b> unifica el formato de cada portal y completa las coordenadas que falten con <b>Nominatim</b>.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(91,75,138,.14);color:var(--morado)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21"/><path d="M8 3v15M16 6v15"/></svg></div>
       <div class="num">Paso 4</div>
       <h4>Validación geográfica</h4>
-      <p>El <b>límite municipal oficial</b> decide qué es Torreón; las 6 zonas solo clasifican dentro de él. Nunca se mueven las coordenadas de un anuncio: si cae fuera, se etiqueta y no entra al mapa. <span id="diagnostico"></span></p>
+      <p>El <b>límite municipal oficial</b> decide qué es Torreón. Las coordenadas nunca se mueven: lo que cae fuera se etiqueta y no entra al mapa. <span id="diagnostico"></span></p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(233,80,38,.12);color:var(--naranja)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
       <div class="num">Paso 5</div>
       <h4>Compuertas de calidad</h4>
-      <p><b>7 reglas auditables</b> filtran lo que no es oferta de suelo: tipo de inmueble, renta, precio y superficie implausibles, y ubicación. Cada rechazo queda registrado con su motivo.</p>
+      <p><b>7 reglas auditables</b> descartan lo que no es oferta de suelo. Cada rechazo queda registrado con su motivo.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l4 4L14 9"/><path d="M10 16l4 4 7-11"/></svg></div>
       <div class="num">Paso 6</div>
       <h4>Verificación cruzada</h4>
-      <p>Un mismo predio anunciado en <b>dos portales a la vez</b>, con la misma ubicación y medidas, es la señal más fuerte de que la oferta es real. Para suelo ejidal o en trámite, la confirmación va contra fuentes oficiales: <b>IRyC</b> (escrituras) y <b>RAN</b> (ejidos), con re-auditoría <b>semestral</b>. El cruce automático entre portales queda pendiente mientras solo un portal responde.</p>
+      <p>Un predio anunciado en <b>dos portales a la vez</b> es la señal más fuerte de que la oferta es real. El suelo ejidal se confirma contra <b>IRyC</b> y <b>RAN</b>, con re-auditoría <b>semestral</b>. El cruce automático espera a que el segundo portal responda.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
       <div class="num">Paso 7</div>
       <h4>Persistencia e historial</h4>
-      <p>Cada corrida compara contra la anterior: detecta <b>altas, bajas y cambios de precio</b>. Las ofertas que salen del mercado se archivan, no se borran.</p>
+      <p>Cada corrida detecta <b>altas, bajas y cambios de precio</b>. Lo que sale del mercado se archiva, no se borra.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
       <div class="num">Paso 8</div>
       <h4>Publicación diaria</h4>
-      <p><b>Cada 24 horas</b> se hace el scrapeo de las ofertas de los portales y se regenera este tablero en automático. La bitácora de corridas queda pública para auditar si el sistema está vivo.</p>
+      <p><b>Cada 24 horas</b> se scrapean los portales y se regenera el tablero. La bitácora queda pública para auditar que el sistema sigue vivo.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(27,23,20,.09);color:var(--tinta)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
       <div class="num">Paso 9</div>
       <h4>Verificación humana (HITL)</h4>
-      <p>Antes de publicarse, una persona del equipo revisa el resultado (<b>human-in-the-loop</b>): confirma que las cifras son coherentes y que ningún dato atípico se coló.</p>
+      <p>Antes de publicar, una persona revisa el resultado (<b>human-in-the-loop</b>): que las cifras cuadren y que ningún dato atípico se haya colado.</p>
     </div>
   </div>
 
