@@ -3,7 +3,8 @@
 Víctor: esto es el pipeline que arrancó de tu código base, ya con las fuentes
 reales conectadas. Corre en Railway desde el 27/07 y se va a mover al hosting
 de IMPLAN. El repo completo está en
-`github.com/soporte-ai-implan/Monitor-Terrenos-Demo`.
+`github.com/soporte-ai-implan/Monitor-de-uso-de-suelo`.
+(El repo `Monitor-Terrenos-Demo` era la demo; ya no se usa.)
 
 ## Qué es cada cosa
 
@@ -30,9 +31,16 @@ para cPanel no hace falta.
 ## Instalación (una sola vez)
 
 ```bash
-cd ~ && git clone https://github.com/soporte-ai-implan/Monitor-Terrenos-Demo.git monitor
+cd ~ && git clone git@github.com:soporte-ai-implan/Monitor-de-uso-de-suelo.git monitor
 cd ~/monitor && python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ```
+
+El clone es por SSH porque el cron tiene que poder hacer `git pull` solo, sin
+que nadie teclee una contraseña. Requiere una llave de despliegue: genera una
+en el servidor con `ssh-keygen -t ed25519 -C "cpanel-implan"` (sin
+passphrase, si no el cron se atora pidiéndola) y sube la pública en el repo,
+Settings -> Deploy keys, sin permiso de escritura. Comprueba con
+`ssh -T git@github.com` antes de seguir.
 
 Sin dependencias binarias a propósito: el point-in-polygon está a mano en
 `zonas.py` justo para no arrastrar shapely/GDAL.

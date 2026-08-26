@@ -36,7 +36,7 @@ archivo estático. Sin procesos encendidos, sin puertos, sin CORS.
 Por Git desde Terminal de cPanel:
 
 ```bash
-cd ~ && git clone https://github.com/soporte-ai-implan/Monitor-Terrenos-Demo.git monitor
+cd ~ && git clone git@github.com:soporte-ai-implan/Monitor-de-uso-de-suelo.git monitor
 ```
 
 O por File Manager, subiendo un ZIP del repo y descomprimiéndolo en `~/monitor`.
