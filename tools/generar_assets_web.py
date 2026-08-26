@@ -27,7 +27,11 @@ def escribir_js(destino: pathlib.Path, variable: str, datos, nota: str) -> None:
     print(f"  {destino.relative_to(RAIZ)}  ({destino.stat().st_size:,} bytes)")
 
 
-def generar_datos(anuncios: list[dict], ultima_actualizacion: str | None = None) -> pathlib.Path:
+def generar_datos(
+    anuncios: list[dict],
+    ultima_actualizacion: str | None = None,
+    fuentes: dict | None = None,
+) -> pathlib.Path:
     """
     Escribe web/datos.js con los anuncios activos.
 
@@ -50,6 +54,10 @@ def generar_datos(anuncios: list[dict], ultima_actualizacion: str | None = None)
             "precio_m2_min": compuertas.PRECIO_M2_MIN,
             "precio_m2_max": compuertas.PRECIO_M2_MAX,
         },
+        # Estado por portal en la ultima corrida ('ok', 'vacia', 'error',
+        # 'descartado'). El tablero lo usa para avisar cuando la oferta bajo
+        # porque un portal se cayo, no porque el mercado se moviera.
+        "fuentes": fuentes or {},
         "terrenos": anuncios,
     }
     destino.write_text(
@@ -57,6 +65,26 @@ def generar_datos(anuncios: list[dict], ultima_actualizacion: str | None = None)
         "// Permite que el dashboard funcione sin API, en hosting estatico.\n"
         f"window.DATOS_MONITOR = {json.dumps(payload, ensure_ascii=False, default=str)};\n",
         encoding="utf-8",
+    )
+    return destino
+
+
+def generar_estado(estado: dict) -> pathlib.Path:
+    """
+    Escribe web/estado.json: el parte medico de la ultima corrida.
+
+    Existe para no depender de que alguien lea el log del servidor. Queda
+    publicado junto al tablero, asi que se consulta desde el navegador
+    (monitor.trcimplan.gob.mx/estado.json) sin acceso a cPanel ni a SSH.
+
+    Se escribe SIEMPRE, tambien cuando la corrida falla: si solo se escribiera
+    al terminar bien, una corrida rota se veria igual que un cron que nunca se
+    disparo, que son problemas distintos.
+    """
+    WEB.mkdir(exist_ok=True)
+    destino = WEB / "estado.json"
+    destino.write_text(
+        json.dumps(estado, ensure_ascii=False, indent=1, default=str), encoding="utf-8"
     )
     return destino
 
@@ -72,6 +100,15 @@ def main() -> None:
         zonas,
         "5 zonas de Torreon (SEPOMEX, fusionadas). Se dibuja SOLO el contorno exterior.",
     )
+
+    municipio = DATA / "torreon_municipio.geojson"
+    if municipio.exists():
+        escribir_js(
+            WEB / "municipio.js",
+            "TORREON_MUNICIPIO",
+            json.loads(municipio.read_text(encoding="utf-8")),
+            "Limite municipal (OSM rel. 5606549, ODbL). Es el guardian: dentro es Torreon.",
+        )
 
     puntos = json.loads((DATA / "puntos_prueba_demo.json").read_text(encoding="utf-8"))
     escribir_js(

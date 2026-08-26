@@ -33,20 +33,17 @@ CASOS = [
     ("coords invertidas",         -103.4100,   25.5400, None,           "fuera",  None),
 ]
 
-# LIMITACION CONOCIDA, documentada a proposito como prueba.
+# LIMITACION RESUELTA (se conserva como prueba de regresion).
 #
-# Un anuncio con coordenadas en Gomez Palacio y SIN una sola palabra de
-# ubicacion se dibuja como si fuera de Torreon: a 2.43 km del borde de Zona 1,
-# dentro de la tolerancia de 3.0 km. La geometria no puede distinguirlo porque
-# las dos ciudades son contiguas.
+# Antes: un anuncio con coordenadas en Gomez Palacio y SIN una sola palabra de
+# ubicacion se dibujaba como si fuera de Torreon. Quedaba a 2.43 km del borde de
+# Zona 1, dentro de la tolerancia, y la geometria de las zonas no podia
+# distinguirlo porque las dos ciudades son contiguas.
 #
-# Se acepta el riesgo porque: (a) los dos portales si mandan texto de ubicacion
-# en la practica, (b) el geocoding con Nominatim rellena la ciudad cuando falta,
-# y (c) el costo de la alternativa (bajar el umbral) era perder predios
-# legitimos de la periferia de Torreon, que era el problema mas grande.
-#
-# Se cierra del todo con el poligono municipal del INEGI. Ver docs/mapa.md.
-CASO_LIMITE = ("GP centro SIN nada de texto", 25.5611, -103.4956, (None, None, None, None), "borde")
+# Ahora: el limite municipal (data/torreon_municipio.geojson) lo rechaza sin
+# necesitar una sola palabra de texto. Si alguien borra ese archivo, el sistema
+# cae al guardian por texto y esta prueba truena avisando.
+CASO_LIMITE = ("GP centro SIN nada de texto", 25.5611, -103.4956, (None, None, None, None), "fuera")
 
 # Casos tomados de anuncios REALES de la corrida de diagnostico. Inmuebles24
 # recorre su jerarquia de ubicacion: en 14 de 20 anuncios mandaba
@@ -118,9 +115,9 @@ def main() -> int:
     nombre, lat, lon, textos, estado_esp = CASO_LIMITE
     r = zonas.clasificar(lon, lat, *textos)
     ok = r["estado"] == estado_esp
-    print(f"\nLimitación conocida (documentada, no es un descuido):")
+    print(f"\nRegresión: el límite municipal separa Torreón de Gómez sin texto")
     print(f"  [{'ok ' if ok else 'MAL'}] {nombre} -> {r['estado']}"
-          f"   <- sin texto, la geometría no separa Torreón de Gómez")
+          f"   <- lo rechaza el polígono municipal")
     if not ok:
         fallas.append(
             f"{nombre}: el comportamiento cambió (esperaba {estado_esp}, dio {r['estado']}). "

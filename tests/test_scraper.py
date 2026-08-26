@@ -132,6 +132,32 @@ def main() -> int:
     check("None" in scraper.normalizar_inmuebles24({})["id_anuncio"],
           "anuncio sin id queda detectable para descarte")
 
+    print("\nFuente que termina bien pero devuelve CERO anuncios")
+    # El caso real: Pincali del 29/07/2026 en adelante. El Actor termina
+    # SUCCEEDED con 0 items. Si eso cuenta como fuente 'ok', database.py archiva
+    # todo su inventario como si se hubiera vendido (blindaje 2), y la corrida
+    # se reporta 'ok' con un portal caido.
+    original_cliente, original_correr = scraper._cliente, scraper._correr_actor
+    try:
+        scraper._cliente = lambda: None
+        scraper._correr_actor = lambda _c, actor_id, _i: (
+            [] if actor_id == scraper.ACTOR_PINCALI else [dict(i24)]
+        )
+        anuncios, detalle = scraper.obtener_anuncios_torreon(10)
+    finally:
+        scraper._cliente, scraper._correr_actor = original_cliente, original_correr
+
+    check(detalle["pincali"]["estatus"] == "vacia",
+          "la fuente vacía NO se marca 'ok'", detalle["pincali"]["estatus"])
+    check(detalle["inmuebles24"]["estatus"] == "ok",
+          "la fuente con datos sigue siendo 'ok'", detalle["inmuebles24"]["estatus"])
+
+    # Es lo que main.py calcula para decidir dónde se dan de baja anuncios.
+    fuentes_ok = [n for n, d in detalle.items() if d.get("estatus") == "ok"]
+    check(fuentes_ok == ["inmuebles24"],
+          "'pincali' queda fuera de fuentes_ok: no se archiva su inventario", str(fuentes_ok))
+    check(len(anuncios) == 1, "los anuncios de la fuente viva sí pasan", str(len(anuncios)))
+
     print("\n" + "=" * 62)
     if fallas:
         print(f"FALLARON {len(fallas)} verificacion(es):")

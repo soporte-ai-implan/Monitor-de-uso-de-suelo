@@ -197,13 +197,28 @@ def obtener_anuncios_torreon(max_por_fuente: int | None = None) -> tuple[list[di
             # Sin id no hay forma de detectar altas/bajas: se descarta.
             validos = [a for a in normalizados if a["id_anuncio"] and "None" not in a["id_anuncio"]]
             anuncios.extend(validos)
+            # Un Actor puede terminar SUCCEEDED y aun asi devolver cero items:
+            # es lo que le paso a Pincali del 29/07/2026 en adelante. Eso NO es
+            # "la fuente respondio bien y hoy no hay terrenos" —un portal no se
+            # vacia de un dia para otro—, es la fuente caida sin avisar.
+            #
+            # Distinguirlo importa porque `fuentes_ok` decide en que fuentes se
+            # dan de baja los anuncios que no volvieron a aparecer. Contando la
+            # fuente vacia como "ok" se archiva TODO su inventario como si se
+            # hubiera vendido. El blindaje de database.py atrapaba la excepcion,
+            # pero no el cero silencioso.
+            estatus = "ok" if validos else "vacia"
             detalle[nombre] = {
-                "estatus": "ok",
+                "estatus": estatus,
                 "crudos": len(crudos),
                 "normalizados": len(validos),
                 "sin_id": len(normalizados) - len(validos),
             }
-            print(f"  [{nombre}] {len(validos)} anuncios ({len(crudos)} crudos)")
+            if estatus == "vacia":
+                print(f"  [{nombre}] AVISO: el Actor terminó bien pero devolvió 0 anuncios. "
+                      f"Se trata como fuente caída: no se dan de baja sus terrenos.")
+            else:
+                print(f"  [{nombre}] {len(validos)} anuncios ({len(crudos)} crudos)")
         except Exception as e:  # noqa: BLE001 - una fuente caida no debe tumbar la corrida
             detalle[nombre] = {"estatus": "error", "error": str(e), "crudos": 0, "normalizados": 0}
             print(f"  [{nombre}] ERROR: {e}")
