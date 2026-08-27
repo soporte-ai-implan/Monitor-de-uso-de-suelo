@@ -8,6 +8,7 @@ Uso:  python tests/test_database.py
 import pathlib
 import sys
 import tempfile
+from datetime import date
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent))
 
@@ -162,6 +163,45 @@ def main() -> int:
     rz2 = database.reclasificar_zonas()
     check(rz2["reclasificados"] == 0, "una segunda pasada ya no cambia nada",
           f"reclasificados={rz2['reclasificados']}")
+
+    print("\nRESPALDO — el historial no se puede reconstruir, asi que se copia")
+    respaldos = database.DB_PATH.parent / "respaldos"
+    copias = sorted(respaldos.glob("terrenos-*.db"))
+    check(len(copias) == 1, "guardar_anuncios dejo una copia de la base",
+          f"copias={len(copias)}")
+    check(copias and copias[0].stat().st_size > 0, "la copia no esta vacia")
+
+    # Que sea una base legible de verdad, no un archivo a medias: es la
+    # diferencia entre tener respaldo y creer que se tiene.
+    if copias:
+        import sqlite3 as _sq
+        c = _sq.connect(copias[0])
+        try:
+            n = c.execute("SELECT COUNT(*) FROM anuncios").fetchone()[0]
+            check(n > 0, "la copia se abre y trae los anuncios", f"filas={n}")
+        except Exception as e:  # noqa: BLE001
+            check(False, "la copia se abre y trae los anuncios", str(e))
+        finally:
+            c.close()
+
+    # Sin base todavia no hay nada que copiar, y eso no es un error.
+    original = database.DB_PATH
+    try:
+        database.DB_PATH = database.DB_PATH.parent / "no-existe.db"
+        check(database.respaldar_base() is None,
+              "sin base previa regresa None en vez de tronar")
+    finally:
+        database.DB_PATH = original
+
+    # La rotacion conserva los N mas recientes y no crece sin fin.
+    for dia in range(1, 11):
+        (respaldos / f"terrenos-2026-01-{dia:02d}.db").write_bytes(b"x")
+    database.respaldar_base(conservar=7)
+    quedan = sorted(respaldos.glob("terrenos-*.db"))
+    check(len(quedan) == 7, "la rotacion deja solo los 7 mas recientes",
+          f"quedan={len(quedan)}")
+    check(quedan[-1].name.startswith(f"terrenos-{date.today().isoformat()}"),
+          "el mas reciente es el de hoy", quedan[-1].name)
 
     print("\n" + "=" * 62)
     if fallas:

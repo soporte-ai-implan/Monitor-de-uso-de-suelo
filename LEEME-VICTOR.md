@@ -94,14 +94,34 @@ archivos.
 Una línea, una vez. A partir de ahí se actualiza solo:
 
 ```
-0 3 * * *   cd ~/monitor && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
+0 3 * * 1   cd ~/monitor && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
 ```
 
 `mkdir ~/monitor/logs` antes, si no existe.
 
+**Corre semanal, los lunes a las 3, y es a propósito.** El Actor de Inmuebles24
+cobra $0.005 por resultado y devuelve ~120 por corrida: $0.60 cada vez. A diario
+son ~$18 al mes contra $5 de crédito gratuito, o sea que se apaga solo a los
+ocho días y va a parecer que se rompió. Semanal son ~$2.60 al mes y cabe con
+holgura.
+
+No se pierde casi nada: los anuncios de suelo duran semanas publicados. Lo
+único que baja es la resolución de las altas y bajas, que pasa a ±7 días. Si más
+adelante se contrata plan de Apify, se sube a diario cambiando el `1` final por
+un `*`.
+
+**Lo que NO hay que hacer es bajar `MAX_RESULTADOS_POR_FUENTE`.** Es tentador
+—"si son 120, que traiga 15"— pero rompe el monitor en silencio: los 105 que no
+llegaron se leen como desaparecidos y el blindaje de `database.py` no alcanza a
+protegerlos, porque solo detecta fuentes que devuelven cero, no fuentes que
+devuelven de menos. La primera corrida reportaría ~105 bajas falsas y el
+tablero diría que se vendió el 85% del suelo de Torreón en un día. El tope tiene
+que quedar por encima del inventario real; la frecuencia es la perilla del
+costo, no el volumen.
+
 El `git pull` es a propósito: así los arreglos suben por GitHub y no hace falta
 que nadie entre al servidor a desplegar. Todo lo que se empuja pasa antes por
-las 4 suites de `tests/`. Si prefieres que no jale solo, quítalo y lo corres tú
+las 5 suites de `tests/`. Si prefieres que no jale solo, quítalo y lo corres tú
 cuando te avise.
 
 ### Cómo saber si corrió, sin entrar al servidor
@@ -167,27 +187,43 @@ regenerados. Una sola recarga por corrida, para no quedarse en círculo.
 
 ## Lo que hay que decidir antes de dejarlo solo
 
-**El costo de Apify.** Es lo más urgente. El Actor de Inmuebles24 cobra
-**$0.005 por resultado** en cuenta gratuita, y devuelve ~120 por corrida: unos
-**$0.60 diarios**, ~$18 al mes. El crédito gratuito son $5, así que **se agota
-en unos 8 días** corriendo a diario. O se contrata plan, o se baja la
-frecuencia. Corriendo diario no cabe en el gratuito.
+**El costo de Apify.** Resuelto bajando el cron a semanal (ver la sección del
+cron, arriba): ~$2.60 al mes contra $5 de crédito gratuito. Queda pendiente
+decidir si se contrata plan para volver a diario, pero ya no es urgente y el
+monitor no se va a apagar solo a mitad de mes.
 
-**`terrenos.db` no viene en el paquete, y hay que rescatarla de Railway.**
+### `terrenos.db`: dónde vive y cómo no perderla
+
 La base se crea sola en la primera corrida, así que el pipeline arranca sin
-problema. Pero la que trae el historial real —altas, bajas, cambios de precio y
-`fecha_primera_vista` desde el 27/07— vive en el volumen de Railway. **Si se
-apaga Railway sin exportarla, ese historial se pierde y no se puede
-reconstruir**, porque los portales no publican cuándo apareció cada anuncio.
+problema. Vive en `~/monitor/terrenos.db`, junto al código, y como el cron corre
+ahí mismo no hay volumen que montar ni nada que configurar. (`DATOS_DIR` la
+mueve a otro lado si algún día hace falta; era indispensable en Railway, donde
+el disco se borraba en cada redeploy, y en cPanel no lo es.)
 
-Bájala antes de apagar nada y déjala en `~/monitor/terrenos.db`. Los días en el
-mercado no dependen de ella (se calculan contra `fecha_publicacion`, que viene
-del portal), pero las altas, las bajas y los cambios de precio sí: sin base
-previa, la primera corrida reporta todo como nuevo.
+**Cada corrida deja una copia antes de tocarla**, en `~/monitor/respaldos/`, y
+se conservan las últimas 7. Se hace con la API `backup()` de sqlite y no
+copiando el archivo, porque copiar a mano durante una escritura deja una base
+corrupta y el punto es tener a qué volver. Si una corrida ensucia los datos:
 
-Y decide dónde va a vivir: con cron en cPanel se queda en `~/monitor` y no hay
-más que pensar; si el pipeline corre desde fuera, hay que persistirla entre
-corridas o cada ejecución empieza de cero.
+```bash
+cp ~/monitor/respaldos/terrenos-AAAA-MM-DD.db ~/monitor/terrenos.db
+```
+
+**La base de Railway trae el historial real** —altas, bajas, cambios de precio y
+`fecha_primera_vista` desde el 27/07— y **no se puede reconstruir**, porque los
+portales no publican cuándo apareció cada anuncio. Cuando aparezca, va así:
+
+```bash
+# con el cron detenido, para que no escriba a media copia
+cp ~/monitor/terrenos.db ~/monitor/respaldos/antes-de-railway.db   # por si acaso
+cp /donde/hayas/bajado/terrenos.db ~/monitor/terrenos.db
+cd ~/monitor && ./.venv/bin/python main.py --seco --max 20         # que abra bien
+```
+
+Los días en el mercado no dependen de ella (se calculan contra
+`fecha_publicacion`, que viene del portal), pero las altas, las bajas y los
+cambios de precio sí: sin base previa, la primera corrida reporta todo como
+nuevo.
 
 **La serie histórica todavía se reconstruye.** Las tablas `corridas` e
 `historial_precios` existen pero el payload no las publica, así que la gráfica

@@ -115,7 +115,15 @@ El plan gratuito da $5 USD al mes. Una corrida de prueba con 25 resultados
 consumió centavos; la corrida completa pide ~102 (84 de Inmuebles24 + 18 de
 Pincali), o sea 4-5 veces más.
 
-Siete corridas diarias deberían caber en los $5, pero es apretado y no está
-medido. **Después de la primera corrida completa, checa el costo exacto en
-Apify → Runs y multiplícalo por 7.** Si no cabe, baja
-`MAX_RESULTADOS_POR_FUENTE` o pon `INTERVALO_HORAS=48`.
+Ya está medido y **no cabe**: $0.005 por resultado × ~120 = $0.60 por corrida,
+~$18 al mes a diario contra $5 de crédito gratuito. Se agota en unos 8 días. El
+cron corre **semanal** por eso (~$2.60 al mes); a diario solo con plan de pago.
+
+**La perilla del costo es la frecuencia, nunca `MAX_RESULTADOS_POR_FUENTE`.**
+Bajar el tope no ahorra proporcionalmente y rompe el monitor en silencio: los
+anuncios que quedan fuera del tope no llegan, y lo que no llega se lee como
+desaparecido. El blindaje de `database.py` no cubre esto —solo detecta fuentes
+que devuelven cero, no fuentes que devuelven de menos— así que la corrida
+reportaría decenas de bajas falsas y el tablero diría que se vendió medio
+Torreón. El tope existe para dar holgura sobre el inventario real, y tiene que
+quedar por encima de él.

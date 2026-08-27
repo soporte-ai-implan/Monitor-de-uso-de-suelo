@@ -43,6 +43,12 @@ DATOS_DIR = pathlib.Path(os.getenv("DATOS_DIR", str(RAIZ))).expanduser()
 DATOS_DIR.mkdir(parents=True, exist_ok=True)
 DB_PATH = DATOS_DIR / "terrenos.db"
 
+# Los respaldos NO son opcionales aqui. El historial de altas, bajas y cambios
+# de precio no se puede reconstruir: los portales no publican cuando aparecio
+# cada anuncio, asi que lo que se pierda queda perdido. Una corrida con datos
+# malos puede ensuciar la tabla, y sin copia previa no hay vuelta atras.
+RESPALDOS_A_CONSERVAR = 7
+
 # Las listas de palabras y los umbrales viven en compuertas.py, que es donde se
 # documentan y se miden contra datos reales.
 # Se reexportan aqui porque api.py y las pruebas ya los consumen por este nombre.
@@ -104,6 +110,48 @@ def _precio_m2(a: dict) -> float | None:
     return None
 
 
+def respaldar_base(conservar: int = RESPALDOS_A_CONSERVAR) -> pathlib.Path | None:
+    """
+    Copia terrenos.db antes de modificarla. Devuelve la ruta, o None si no hay
+    base todavia (primera corrida) o si el respaldo fallo.
+
+    Usa la API `backup()` de sqlite y no `shutil.copy`: copiar el archivo a mano
+    mientras hay una escritura a medias deja una base corrupta, y el punto de
+    esto es justamente tener a que volver.
+
+    Nunca lanza excepcion. Un respaldo que truena no debe tumbar la corrida: se
+    reporta y se sigue, porque quedarse sin datos nuevos es peor que quedarse
+    sin la copia de hoy.
+    """
+    if not DB_PATH.exists():
+        return None
+    try:
+        # La carpeta se deriva de DB_PATH y no de DATOS_DIR: las pruebas mueven
+        # DB_PATH a un temporal, y si esto no lo siguiera dejarian respaldos
+        # sueltos en el repo cada vez que corren.
+        respaldos = DB_PATH.parent / "respaldos"
+        respaldos.mkdir(parents=True, exist_ok=True)
+        destino = respaldos / f"terrenos-{date.today().isoformat()}.db"
+        origen = sqlite3.connect(DB_PATH)
+        try:
+            copia = sqlite3.connect(destino)
+            try:
+                origen.backup(copia)
+            finally:
+                copia.close()
+        finally:
+            origen.close()
+
+        # Se conservan los N mas recientes por nombre, que ordena por fecha.
+        viejos = sorted(respaldos.glob("terrenos-*.db"))[:-conservar]
+        for v in viejos:
+            v.unlink(missing_ok=True)
+        return destino
+    except Exception as e:  # noqa: BLE001
+        print(f"  Aviso: no pude respaldar la base: {e}")
+        return None
+
+
 def guardar_anuncios(anuncios: list[dict], fuentes_ok: Iterable[str] | None = None) -> dict:
     """
     Guarda la corrida actual y detecta altas/bajas.
@@ -112,6 +160,7 @@ def guardar_anuncios(anuncios: list[dict], fuentes_ok: Iterable[str] | None = No
     dan de baja los anuncios que ya no aparecieron. Si es None se deduce de los
     propios anuncios.
     """
+    respaldar_base()
     hoy = date.today().isoformat()
     conn = conectar()
     nuevos = actualizados = bajas = cambios_precio = 0

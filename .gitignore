@@ -4,6 +4,7 @@
 # Base de datos y cache generados en cada corrida
 *.db
 *.db-journal
+respaldos/
 data/cache_geocoding.json
 
 # Bitacora del scheduler

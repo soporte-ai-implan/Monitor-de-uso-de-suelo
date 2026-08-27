@@ -1,0 +1,45 @@
+# Red de seguridad, no la solucion.
+#
+# Lo correcto es que la carpeta publicada sea ~/monitor/web, y entonces nada de
+# esto se sirve porque ni siquiera esta bajo el docroot. Pero el 27/08/2026 se
+# publico ~/monitor completo, y asi quedaron accesibles main.py, scraper.py, el
+# LEEME y —en cuanto corriera el pipeline— terrenos.db entera, que es el
+# historial del monitor en un solo archivo descargable.
+#
+# Este archivo cierra eso aunque el docroot siga mal puesto. Se queda aunque se
+# corrija: cuesta nada y protege del dia que alguien lo mueva de vuelta.
+
+# --- Archivos que nunca deben servirse ---
+<FilesMatch "\.(db|db-journal|sqlite|sqlite3|py|pyc|sh|log|sql|example)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# .env, .git y cualquier otro punto-archivo. cPanel suele bloquearlos por su
+# cuenta, pero eso es configuracion del hosting y puede cambiar sin avisarnos.
+<FilesMatch "^\.">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+  <IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+  </IfModule>
+</FilesMatch>
+
+# --- Carpetas internas ---
+# 404 y no 403 a proposito: un 403 confirma que la ruta existe.
+RedirectMatch 404 ^/(logs|tests|tools|docs|respaldos|\.git|__pycache__)(/|$)
+
+# data/ guarda el cache de geocoding y el diagnostico de la ultima corrida, que
+# trae los anuncios rechazados con su motivo. Los geojson que el mapa necesita
+# ya viven en web/, generados: aqui no hace falta abrir nada.
+RedirectMatch 404 ^/data(/|$)
+
+# El LEEME es interno: dice como esta armado el despliegue y que estaba roto.
+RedirectMatch 404 ^/LEEME-VICTOR\.md$
