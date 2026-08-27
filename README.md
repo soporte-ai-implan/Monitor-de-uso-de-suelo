@@ -120,7 +120,7 @@ python tests/test_api.py
 | Fuente | Estado | Volumen |
 |---|---|---|
 | Inmuebles24 | activa | 120 anuncios por corrida (~101 pasan las compuertas) |
-| Pincali | **sin datos desde el 29/07/2026** | devolvía 5; hoy regresa 0 sin lanzar error |
+| Pincali | activo, rinde poco | el Actor limita cuentas gratuitas a ~5 anuncios; la superficie viene en `features`, no en `areaM2` |
 | Vivanuncios | **descartada** | los 2 actores disponibles fallaron en pruebas reales |
 
 El monitor arranca con **2 fuentes, no 3**. El dashboard lo declara con

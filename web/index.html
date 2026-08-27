@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor de Suelo — IMPLAN Torreón</title>
+<title>Monitor de Suelo, IMPLAN Torreón</title>
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -13,15 +13,19 @@
 <style>
   :root{
     --crema:#FBF9F6; --papel:#FFFFFF; --tinta:#1B1714; --gris:#5C554D;
-    --muted:#8A8178; --borde:#E3DCD2; --punteado:#D8CFC2; --oscuro:#171310;
+    --muted:#6F675E; --borde:#E3DCD2; --punteado:#D8CFC2; --oscuro:#171310;
     --naranja:#E95026; --azul:#1B5286; --verde:#1A7A47; --ambar:#C6881E; --morado:#5B4B8A;
+    --rojo:#C8102E;
+    /* El naranja de marca da 3.7:1 sobre blanco: sirve para acentos y fondos
+       oscuros, no para texto chico. Las ligas usan este, que sí pasa AA. */
+    --liga:#C23B14;
     --sombra:0 1px 2px rgba(27,23,20,.06), 0 0 0 1px var(--borde);
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--crema);color:var(--tinta);
        font-family:'Libre Franklin',system-ui,sans-serif;font-size:15px;line-height:1.6}
   h1,h2,h3,h4{font-family:'Archivo',sans-serif;letter-spacing:-.01em;margin:0}
-  a{color:var(--naranja)}
+  a{color:var(--liga)}
 
   /* ---------- barra superior ---------- */
   .barra{background:var(--oscuro);padding:12px 40px;display:flex;align-items:center;
@@ -46,9 +50,12 @@
         flex-wrap:wrap;margin-bottom:26px}
   .tope h1{font-size:2rem;font-weight:800;line-height:1.1}
   .tope p{color:var(--gris);font-size:.92rem;margin:8px 0 0;max-width:640px}
+  /* Envuelve a proposito: con la antiguedad del dato colgada al lado, el
+     nowrap empujaba el chip a 584px y arrastraba la pagina de lado en movil. */
   .chip-fecha{display:inline-flex;align-items:center;gap:8px;background:var(--papel);
               border-radius:11px;padding:11px 17px;box-shadow:var(--sombra);
-              font-size:.83rem;color:var(--gris);white-space:nowrap}
+              font-size:.83rem;color:var(--gris);flex-wrap:wrap;max-width:100%}
+  .chip-fecha > span{min-width:0}
   .chip-fecha b{color:var(--tinta)}
 
   /* ---------- tarjetas KPI ---------- */
@@ -90,6 +97,11 @@
   .it-ley{display:inline-flex;align-items:center;gap:8px;font-size:.79rem;color:var(--gris)}
   .trazo{width:20px;height:0;border-top:3px solid;border-radius:2px;flex-shrink:0}
   .it-ley b{color:var(--tinta)}
+  /* Muestra de punto aproximado en la leyenda: hueco y punteado, igual que en el mapa. */
+  .pt-aprox{position:relative;width:13px;height:13px;border-radius:50%;border:1.6px solid #2B2622;
+            background:#fff;flex-shrink:0;box-sizing:border-box}
+  .pt-aprox::after{content:'';position:absolute;left:4px;top:4px;width:4px;height:4px;
+                   border-radius:50%;background:var(--muted)}
   .etq-zona{background:rgba(255,255,255,.82);border:1px solid var(--borde);border-radius:6px;
             padding:2px 7px;font-family:'Archivo',sans-serif;font-size:.62rem;font-weight:800;
             letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
@@ -102,17 +114,50 @@
   .seg .n2{font-size:.7rem;color:var(--muted);margin-bottom:11px}
   .seg .n3{font-family:'Archivo',sans-serif;font-weight:800;font-size:1.4rem;line-height:1}
   .seg .n4{font-size:.72rem;color:var(--gris);margin-top:4px}
+  /* Índice del segmento contra la mediana general: dice si va arriba o abajo
+     del mercado sin obligar a comparar pesos contra pesos. */
+  .idx{display:inline-flex;flex-direction:column;margin-top:8px;padding:5px 9px;border-radius:8px;
+       font-family:'Archivo',sans-serif;font-weight:800;font-size:.78rem;line-height:1.15}
+  .idx span{font-family:'Libre Franklin',sans-serif;font-weight:600;font-size:.6rem;
+            letter-spacing:.02em;opacity:.75;margin-top:2px}
+  .idx.alto{background:rgba(26,122,71,.11);color:#146037}
+  .idx.bajo{background:rgba(194,59,20,.10);color:#9B2F10}
   .seg .n5{display:inline-block;margin-top:10px;font-size:.67rem;font-weight:700;
            padding:3px 9px;border-radius:20px;background:#EFEAE2;color:var(--gris)}
   .seg.pocos{border-style:dashed}
   .seg.pocos .n5{background:#FDF3E0;color:#8A5A20}
 
   /* ---------- gráficas ---------- */
-  .g-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:22px;margin-top:18px}
+  /* 2x2 fijo arriba de 900px: con auto-fit la cuarta gráfica caía sola en su renglón. */
+  .g-grid{display:grid;grid-template-columns:1fr;gap:22px;margin-top:18px}
+  @media(min-width:900px){.g-grid{grid-template-columns:1fr 1fr}}
   .g-panel{border:1px solid var(--borde);border-radius:13px;padding:18px 20px;background:var(--papel)}
   .g-panel h3{margin-bottom:4px;font-size:.98rem}
   .g-panel .desc{font-size:.75rem;color:var(--muted);margin:0 0 14px}
   .lienzo{position:relative;height:250px}
+  .lienzo canvas{transition:opacity .25s ease}
+  /* Antigüedad del dato, pegada al sello de fecha. */
+  .edad{margin-left:8px;font-size:.72rem;font-weight:700;color:var(--muted)}
+  .edad.rancia{color:var(--naranja)}
+  .chip-fecha.rancio{border-color:#F3D9CC;background:#FFF8F4}
+  .lienzo-alto{height:290px}
+  /* La historica va a lo ancho: es una serie temporal, no cabe en media reja. */
+  .g-ancho{margin-top:22px;padding-top:22px;border-top:1px dashed var(--punteado)}
+  .g-cab{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;flex-wrap:wrap}
+  .vivo{display:inline-flex;align-items:center;gap:7px;font-family:'Archivo',sans-serif;
+        font-size:.66rem;font-weight:800;letter-spacing:.09em;text-transform:uppercase;
+        color:var(--verde);background:rgba(26,122,71,.10);border:1px solid rgba(26,122,71,.22);
+        padding:5px 11px;border-radius:999px;white-space:nowrap}
+  .pulso{width:7px;height:7px;border-radius:50%;background:var(--verde);position:relative}
+  .pulso::after{content:'';position:absolute;inset:-4px;border-radius:50%;
+                border:1.5px solid var(--verde);animation:lat 1.9s ease-out infinite}
+  @keyframes lat{0%{transform:scale(.5);opacity:.85}100%{transform:scale(1.5);opacity:0}}
+  @media (prefers-reduced-motion:reduce){.pulso::after{animation:none;opacity:.35}}
+  /* Los pasos ahora cargan cifras y ligas: que se distingan del cuerpo. */
+  .paso p a{color:var(--azul);text-decoration:underline;text-underline-offset:2px}
+  .paso .dato{display:block;margin-top:9px;padding-top:9px;border-top:1px dashed var(--punteado);
+              font-size:.75rem;color:var(--tinta)}
+  .paso .dato b{font-family:'Archivo',sans-serif;font-weight:800}
 
   /* ---------- tabla ---------- */
   .filtros{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:16px 0}
@@ -120,6 +165,8 @@
     font-family:inherit;font-size:.82rem;background:var(--papel);color:var(--tinta)}
   .filtros input{min-width:210px}
   .env-tabla{overflow-x:auto;border:1px solid var(--borde);border-radius:12px}
+  table.tb th:focus-visible,.sw:focus-within,select:focus-visible,input:focus-visible,
+  button:focus-visible,a:focus-visible{outline:2px solid var(--azul);outline-offset:2px;border-radius:4px}
   table.tb{width:100%;border-collapse:collapse;font-size:.82rem;min-width:820px}
   table.tb th{background:var(--crema);color:var(--muted);font-weight:800;font-size:.66rem;
     text-transform:uppercase;letter-spacing:.07em;padding:12px 14px;text-align:left;
@@ -154,6 +201,11 @@
 
   /* ---------- pipeline ---------- */
   .paso-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-top:18px}
+  .nota-mapa{margin-top:18px;padding:18px 20px;background:var(--papel);border-radius:14px;
+             box-shadow:var(--sombra);border-left:3px solid var(--punteado)}
+  .nota-mapa h4{font-size:.9rem;font-weight:700;margin-bottom:8px}
+  .nota-mapa p{font-size:.79rem;color:var(--gris);line-height:1.65;margin:0 0 8px;max-width:82ch}
+  .nota-mapa p:last-child{margin-bottom:0}
   .paso{background:var(--papel);border-radius:14px;padding:20px;box-shadow:var(--sombra)}
   .paso .ico{width:42px;height:42px;border-radius:12px;display:flex;align-items:center;
              justify-content:center;margin-bottom:13px}
@@ -165,7 +217,14 @@
   .paso p b{color:var(--tinta)}
 
   .creditos{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:18px;margin-top:18px}
-  .cred{border-left:3px solid var(--borde);padding-left:15px}
+  .cred{border-left:3px solid var(--borde);padding-left:15px;position:relative}
+  /* Verde, blanco y rojo. El blanco sobre la tarjeta blanca no se veria, asi que
+     ese se dibuja aparte con un filo de 1px: se lee como blanco deliberado y no
+     como una barra que falta. */
+  .cred.blanca{border-left-color:var(--papel)}
+  .cred.blanca::before{content:'';position:absolute;left:-3px;top:0;bottom:0;width:3px;
+                       box-sizing:border-box;background:var(--papel);
+                       border:1px solid var(--borde);border-radius:1px}
   .cred .rol{font-family:'Archivo',sans-serif;font-size:.66rem;font-weight:800;letter-spacing:.09em;
              text-transform:uppercase;color:var(--naranja);margin-bottom:5px}
   .cred .nom{font-weight:700;font-size:.87rem;line-height:1.4}
@@ -177,6 +236,29 @@
   /* ---------- marcadores ---------- */
   @keyframes pulso{0%{transform:scale(.55);opacity:.6}70%{transform:scale(2.4);opacity:0}100%{transform:scale(2.4);opacity:0}}
   .mk{background:transparent!important;border:0!important}
+  /* Punto agrupado: el número es cuántas ofertas hay en esa coordenada, y el
+     tamaño va con la cantidad — antes todos medían igual y no decían nada. */
+  .grupo{border-radius:50%;display:flex;align-items:center;justify-content:center;
+         font-family:'Archivo',sans-serif;font-weight:800;color:#fff;
+         border:2px solid #fff;box-shadow:0 1px 4px rgba(27,23,20,.3);cursor:pointer}
+  .grupo.lejos{border-width:1.5px;box-shadow:0 1px 3px rgba(27,23,20,.25)}
+  .chico{width:8px;height:8px;border-radius:50%;border:1.5px solid #fff;
+         box-shadow:0 1px 2px rgba(27,23,20,.3)}
+  /* Aproximado: aro de tinta (dice "aproximado") con núcleo del color de su
+     zona (dice a cuál pertenece). Sin número, para no chocar con el conteo. */
+  .aro{position:absolute;left:0;top:0;width:14px;height:14px;border-radius:50%;
+       border:1.6px solid #2B2622;background:#fff;box-sizing:border-box}
+  .centro{position:absolute;left:5px;top:5px;width:4px;height:4px;border-radius:50%}
+  .globo .h.aprox,.emg .h.aprox{color:#8A5A12;font-weight:600}
+  /* Lista de las ofertas que comparten punto: sin esto, las de abajo no existen. */
+  .rengs{max-height:186px;overflow-y:auto;border-top:1px solid var(--borde)}
+  .reng{display:flex;align-items:center;gap:9px;padding:7px 2px;font-size:.78rem;
+        border-bottom:1px solid var(--borde);color:var(--tinta);text-decoration:none}
+  .reng:last-child{border-bottom:0}
+  .reng:hover{background:var(--crema)}
+  .reng .r1{flex:1;color:var(--gris)}
+  .reng .r2{font-weight:700;font-family:'Archivo',sans-serif}
+  .reng .r3{color:var(--naranja);font-weight:700}
   .anillo{position:absolute;inset:0;border-radius:50%;animation:pulso 1800ms ease-out infinite}
   .nucleo{position:absolute;left:3px;top:3px;width:8px;height:8px;border-radius:50%;
           border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
@@ -223,9 +305,8 @@
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-6"/></svg>
         Inteligencia de mercado · Suelo urbano
       </div>
-      <h1>Monitor de Suelo en Venta</h1>
-      <p>Extracción automatizada de portales de oferta inmobiliaria, actualmente Inmuebles24 y Pincali.
-         Una lectura del <b>precio de oferta</b> del suelo formal en Torreón.</p>
+      <h1>Monitor de suelo</h1>
+      <p>Seguimiento continuo de la oferta publicada en portales inmobiliarios.</p>
     </div>
     <div class="chip-fecha">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
@@ -240,15 +321,15 @@
         <span class="ico" style="background:rgba(233,80,38,.12);color:var(--naranja)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg></span>
       </div>
       <div class="cifra" id="k-total">—</div>
-      <div class="pie" id="k-total-pie">en 2 portales monitoreados</div>
+      <div class="pie" id="k-total-pie">en los portales monitoreados</div>
     </div>
     <div class="kpi">
       <div class="fila">
-        <span class="rot">Precio mediano de oferta</span>
+        <span class="rot">Precio medio de oferta</span>
         <span class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span>
       </div>
       <div class="cifra" id="k-precio" style="color:var(--azul)">—</div>
-      <div class="pie" id="k-precio-pie">por m² de terreno</div>
+      <div class="pie" id="k-precio-pie">mediana por m² de terreno</div>
     </div>
     <div class="kpi">
       <div class="fila">
@@ -268,15 +349,6 @@
     </div>
   </section>
 
-  <div class="aviso">
-    <b>Alcance de esta versión.</b>
-    <ul>
-      <li>Mide <b>precio de oferta</b>, es decir lo que el vendedor pide, no el precio de cierre. No sustituye un avalúo.</li>
-      <li>Cubre <b>2 portales</b>, no el 100% del mercado: Vivanuncios quedó descartado porque los actores disponibles fallaron en pruebas reales.</li>
-      <li>El <b>límite municipal oficial</b> define qué es Torreón; las 6 zonas clasifican dentro de él.</li>
-      <li id="nota-datos">Los puntos mostrados son de ejemplo hasta que el pipeline quede conectado.</li>
-    </ul>
-  </div>
 
   <section class="tarjeta">
     <div class="barra-mapa">
@@ -300,16 +372,7 @@
   </section>
 
   <section class="tarjeta">
-    <div class="rotulo">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><rect x="7" y="12" width="3" height="6"/><rect x="12" y="8" width="3" height="10"/><rect x="17" y="4" width="3" height="14"/></svg>
-      Precio según tamaño
-    </div>
-    <h2>El suelo no vale lo mismo por m² según el tamaño del predio</h2>
-    <p class="sutil" style="margin:5px 0 0">
-      Una sola cifra para toda la oferta engaña a los dos extremos: el lote urbano chico y el
-      predio rústico no juegan en el mismo mercado. La <b>n</b> es el número de terrenos en cada
-      segmento, y donde es baja la mediana se mueve con un solo anuncio nuevo.
-    </p>
+    <h2>Inteligencia de mercado de suelo</h2>
     <div class="seg-grid" id="segmentos"></div>
   </section>
 
@@ -321,8 +384,7 @@
     <h2>Cómo se reparte la oferta</h2>
     <div class="g-grid">
       <div class="g-panel">
-        <h3>Precio mediano de oferta por zona</h3>
-        <p class="desc">Pesos por m². La zona con menos anuncios tiene la mediana menos estable.</p>
+        <h3>Precio medio de oferta por zona</h3>
         <div class="lienzo"><canvas id="gZonas"></canvas></div>
       </div>
       <div class="g-panel">
@@ -340,6 +402,17 @@
         <p class="desc">De dónde proviene cada anuncio registrado.</p>
         <div class="lienzo"><canvas id="gPortales"></canvas></div>
       </div>
+    </div>
+
+    <div class="g-panel g-ancho">
+      <div class="g-cab">
+        <div>
+          <h3>Cómo se ha movido el mercado en tiempo real</h3>
+          <p class="desc" id="tend-desc">Mediana de $/m² de la oferta vigente.</p>
+        </div>
+        <span class="vivo"><span class="pulso"></span>En vivo</span>
+      </div>
+      <div class="lienzo lienzo-alto"><canvas id="gTendencia"></canvas></div>
     </div>
   </section>
 
@@ -386,14 +459,6 @@
     </div>
   </section>
 
-  <section class="tarjeta">
-    <h3>Validación geográfica de los puntos</h3>
-    <p class="sutil" style="margin:5px 0 0">
-      El <b>límite municipal oficial</b> decide qué es Torreón; las 6 zonas solo clasifican dentro
-      de él. Nunca se mueven las coordenadas de un anuncio: si cae fuera, se etiqueta.
-    </p>
-    <div class="d-grid" id="diagnostico"></div>
-  </section>
 
   <div style="margin-bottom:20px">
     <div class="rotulo">
@@ -408,41 +473,84 @@
   </div>
   <div class="paso-grid">
     <div class="paso">
-      <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.2-8.6"/><path d="M21 3v6h-6"/></svg></div>
+      <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></div>
       <div class="num">Paso 1</div>
-      <h4>Extracción automatizada</h4>
-      <p>Actores de <b>Apify</b> recorren Inmuebles24 y Pincali y capturan de cada anuncio: precio, superficie, colonia, coordenadas, fecha y liga original.</p>
+      <h4>Alcance de esta versión</h4>
+      <p>Mide <b>precio de oferta</b>, lo que el vendedor pide, no el de cierre: no sustituye un avalúo. Cubre <span id="cobertura-portales">los portales listados</span>, no todo el mercado. <span id="nota-datos"></span></p>
     </div>
     <div class="paso">
-      <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
+      <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-6.2-8.6"/><path d="M21 3v6h-6"/></svg></div>
       <div class="num">Paso 2</div>
-      <h4>Normalización y geolocalización</h4>
-      <p>Un pipeline en <b>Python</b> unifica los formatos de cada portal, completa coordenadas con <b>Nominatim</b> y asigna zona contra el <b>límite municipal oficial</b>.</p>
+      <h4>Extracción automatizada</h4>
+      <p>Por ahora corre <b>un solo actor</b> de <b>Apify</b>, sobre <a href="https://www.inmuebles24.com/terrenos-en-venta-en-torreon.html" target="_blank" rel="noopener">Inmuebles24</a>. De cada anuncio toma precio, superficie, colonia, coordenadas, fecha y liga original.</p>
     </div>
     <div class="paso">
-      <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
+      <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg></div>
       <div class="num">Paso 3</div>
-      <h4>Compuertas de calidad</h4>
-      <p><b>7 reglas auditables</b> filtran lo que no es oferta de suelo: tipo de inmueble, renta, precio y superficie implausibles, y ubicación. Cada rechazo queda registrado con su motivo.</p>
+      <h4>Normalización y geolocalización</h4>
+      <p><b>Python</b> unifica el formato de cada portal y completa las coordenadas que falten con <b>Nominatim</b>.</p>
     </div>
     <div class="paso">
-      <div class="ico" style="background:rgba(91,75,138,.14);color:var(--morado)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
+      <div class="ico" style="background:rgba(91,75,138,.14);color:var(--morado)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="1 6 8 3 16 6 23 3 23 18 16 21 8 18 1 21"/><path d="M8 3v15M16 6v15"/></svg></div>
       <div class="num">Paso 4</div>
-      <h4>Persistencia e historial</h4>
-      <p>Cada corrida compara contra la anterior: detecta <b>altas, bajas y cambios de precio</b>. Las ofertas que salen del mercado se archivan, no se borran.</p>
+      <h4>Validación geográfica</h4>
+      <p>El <b>límite municipal oficial</b> decide qué es Torreón. Las coordenadas nunca se mueven: lo que cae fuera se etiqueta y no entra al mapa. <span id="diagnostico"></span></p>
     </div>
     <div class="paso">
-      <div class="ico" style="background:rgba(233,80,38,.12);color:var(--naranja)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 10h-1.3A8 8 0 104 16.2"/><path d="M12 12v9M8 17l4 4 4-4"/></svg></div>
+      <div class="ico" style="background:rgba(233,80,38,.12);color:var(--naranja)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg></div>
       <div class="num">Paso 5</div>
+      <h4>Compuertas de calidad</h4>
+      <p><b>7 reglas auditables</b> descartan lo que no es oferta de suelo. Cada rechazo queda registrado con su motivo.</p>
+    </div>
+    <div class="paso">
+      <div class="ico" style="background:rgba(27,82,134,.12);color:var(--azul)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12l4 4L14 9"/><path d="M10 16l4 4 7-11"/></svg></div>
+      <div class="num">Paso 6</div>
+      <h4>Verificación cruzada</h4>
+      <p>Un predio anunciado en <b>dos portales a la vez</b> es la señal más fuerte de que la oferta es real. El suelo ejidal se confirma contra el <b>Registro Agrario Nacional</b> y las escrituras contra el <b>Instituto Registral y Catastral</b>. El cruce automático entre portales aún no está implementado.</p>
+    </div>
+    <div class="paso">
+      <div class="ico" style="background:rgba(26,122,71,.13);color:var(--verde)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></svg></div>
+      <div class="num">Paso 7</div>
+      <h4>Persistencia e historial</h4>
+      <p>Cada corrida detecta <b>altas, bajas y cambios de precio</b>. Lo que sale del mercado se archiva, no se borra.</p>
+    </div>
+    <div class="paso">
+      <div class="ico" style="background:rgba(198,136,30,.14);color:var(--ambar)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></div>
+      <div class="num">Paso 8</div>
       <h4>Publicación diaria</h4>
-      <p>El pipeline corre <b>una vez al día</b> en automático y regenera este tablero. La bitácora de corridas queda pública para auditar si el sistema está vivo.</p>
+      <p><b>Cada 24 horas</b> se scrapean los portales y se regenera el tablero. La bitácora queda pública para auditar que el sistema sigue vivo.</p>
     </div>
     <div class="paso">
       <div class="ico" style="background:rgba(27,23,20,.09);color:var(--tinta)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></div>
-      <div class="num">Paso 6</div>
+      <div class="num">Paso 9</div>
       <h4>Verificación humana (HITL)</h4>
-      <p>Antes de publicarse, una persona del equipo revisa el resultado (<b>human-in-the-loop</b>): confirma que las cifras son coherentes y que ningún dato atípico se coló.</p>
+      <p>Antes de publicar, una persona revisa el resultado (<b>human-in-the-loop</b>): que las cifras cuadren y que ningún dato atípico se haya colado.</p>
     </div>
+  </div>
+
+  <div class="nota-mapa">
+    <h4>Cómo leer el mapa</h4>
+    <p>
+      Las <b>cinco zonas del monitor</b> no las inventó el tablero: parten de la división territorial
+      de <b>SEPOMEX</b> y se agruparon siguiendo los distritos del <b>Plan Director de Desarrollo
+      Urbano</b>, hasta quedar en cinco. Son la mancha urbana. La <b>línea gris punteada</b> no es una
+      zona: es el <b>límite municipal oficial</b>, el que decide qué cuenta como Torreón. Va en gris
+      y punteada a propósito, para que se lea como referencia y no compita con los datos; lo que
+      queda por fuera aparece atenuado.
+    </p>
+    <p>
+      Los <b>puntos huecos con anillo punteado</b> caen dentro del municipio pero fuera de las cinco
+      zonas: ejidos, reservas y poblados como La Partida, donde no hay zonificación urbana. No se les
+      inventa una zona ni se les mueven las coordenadas: se les asigna la <b>más cercana</b> y el
+      globo dice a cuántos kilómetros quedó. Conservan el color de esa zona porque sí entran en su
+      mediana; el hueco es el aviso de que esa pertenencia es <b>aproximada, no medida</b>.
+      <span id="nota-aprox"></span>
+    </p>
+    <p>
+      Un <b>punto con número</b> son varias ofertas en la misma coordenada. Los portales publican
+      todos los lotes de un fraccionamiento en un solo pin; el número dice cuántas hay y el clic
+      las lista una por una.
+    </p>
   </div>
 
   <section class="tarjeta" style="margin-top:26px">
@@ -452,17 +560,17 @@
       Desarrollado con asistencia de IA.
     </p>
     <div class="creditos">
-      <div class="cred" style="border-left-color:var(--naranja)">
-        <div class="rol">Desarrollo e implementación</div>
-        <div class="nom">C. Ever Isaac Espino Valadez</div>
-        <div class="ads">Dirección de Competitividad Sectorial</div>
-      </div>
-      <div class="cred" style="border-left-color:var(--azul)">
+      <div class="cred" style="border-left-color:var(--verde)">
         <div class="rol">Dirección del proyecto</div>
         <div class="nom">Mtro. Jesús Abraham Salazar Valadez</div>
         <div class="ads">Director de Competitividad Sectorial</div>
       </div>
-      <div class="cred" style="border-left-color:var(--verde)">
+      <div class="cred blanca">
+        <div class="rol">Desarrollo e implementación</div>
+        <div class="nom">C. Ever Isaac Espino Valadez</div>
+        <div class="ads">Dirección de Competitividad Sectorial</div>
+      </div>
+      <div class="cred" style="border-left-color:var(--rojo)">
         <div class="rol">Arquitectura base e implementación web</div>
         <div class="nom">Lsci. Víctor Manuel Gómez Reynoso</div>
         <div class="ads">Programación y Software · Dirección de Investigación Estratégica</div>
@@ -474,11 +582,10 @@
 
 <footer>
   <p>
-    Instrumento de información pública sin fines de lucro del <b>IMPLAN Torreón</b> — Monitor de Suelo.
+    Instrumento de información pública sin fines de lucro del <b>IMPLAN Torreón</b>, Monitor de Suelo.
     La información corresponde a los portales de origen; el IMPLAN no participa ni media en las transacciones.<br>
-    Dirección de Competitividad Sectorial · Desarrollo: C. Ever Isaac Espino Valadez ·
-    Dirección: Mtro. Jesús Abraham Salazar Valadez · Arquitectura base: Lsci. Víctor Manuel Gómez Reynoso<br>
-    Fuentes: Inmuebles24, Pincali · Cartografía: OpenStreetMap, CARTO · Límite municipal: OpenStreetMap (ODbL)<br>
+    Dirección de Competitividad Sectorial<br>
+    Fuentes: Inmuebles24, Pincali · Cartografía y límite municipal: OpenStreetMap (ODbL)<br>
     Contacto: <a href="mailto:competitividad@trcimplan.gob.mx">competitividad@trcimplan.gob.mx</a>
     &nbsp;·&nbsp; IMPLAN Torreón © 2026
   </p>

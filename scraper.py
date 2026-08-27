@@ -12,6 +12,7 @@ real trae `address`, `neighborhood`, `city` planos.
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
 from apify_client import ApifyClient
@@ -29,6 +30,35 @@ URL_PINCALI = "https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-co
 # Vivanuncios queda fuera a proposito: los 2 actores disponibles fallaron en
 # pruebas reales (uno crashea en ~1s, el otro muere a los 66s por Cloudflare).
 # Ver docs/scraper.md. El dashboard lo declara tachado, no lo esconde.
+#
+# Pincali SI se corre, pero rinde poco por el plan gratuito. Medido el
+# 21/08/2026 corriendo el Actor a mano con la URL y el input de produccion:
+#
+#   - Termina SUCCEEDED y devuelve 5 anuncios, con este mensaje suyo: "To
+#     ensure service stability, free accounts have limited data extraction.
+#     Upgrade to a paid plan to unlock full access". El tope lo pone el Actor
+#     por ser cuenta gratuita; la URL y el input estan bien. Con plan de pago
+#     deberia devolver mas: hay que volver a medirlo cuando se contrate.
+#   - Los 5 traen `areaM2` en null, pero la superficie SI viene, en `features`
+#     como texto ("601.15 m² de terreno"). Ver _m2_pincali(): leyendo solo
+#     `areaM2` se tiraba la superficie de anuncios que ya se habian pagado.
+#
+# Vivanuncios si queda fuera: los 2 actores disponibles fallaron en pruebas
+# reales (uno crashea en ~1s, el otro muere a los 66s por Cloudflare).
+FUENTES_ACTIVAS = tuple(
+    f.strip()
+    for f in os.getenv("FUENTES_ACTIVAS", "inmuebles24,pincali").split(",")
+    if f.strip()
+)
+
+# Por que quedo fuera cada fuente apagada. Viaja al dashboard y a la bitacora
+# para que la ausencia sea explicita y no parezca un olvido.
+FUENTES_APAGADAS = {
+    "vivanuncios": {
+        "estatus": "descartado",
+        "razon": "los 2 actores disponibles fallaron en pruebas reales (crash / bloqueo Cloudflare)",
+    },
+}
 
 MAX_POR_FUENTE = int(os.getenv("MAX_RESULTADOS_POR_FUENTE", "200"))
 
@@ -97,6 +127,34 @@ def _fecha(v: Any) -> str | None:
     return str(v)[:10]
 
 
+def _m2_pincali(a: dict) -> float | None:
+    """
+    Saca la superficie de un anuncio de Pincali.
+
+    El Actor deja `areaM2` en null —medido el 21/08/2026: null en los 5 de 5—
+    pero SI publica la superficie en `features`, como texto:
+
+        ["25,748 m² de terreno", "Publicado", "25,748 m² de terreno"]
+        ["200 m² de terreno", "20 m de largo", "10 m de frente", ...]
+
+    Leyendo solo `areaM2` se tiraba la superficie de todos los anuncios, y sin
+    superficie no hay precio por m2. Se prefiere `areaM2` por si algun dia lo
+    llenan, y si no se cae a `features`.
+
+    Ojo con el numero: viene con coma de millares y punto decimal
+    ("14,496.79"), y hay renglones de largo y frente que NO son superficie.
+    """
+    directo = _num(a.get("areaM2"))
+    if directo:
+        return directo
+
+    for texto in a.get("features") or []:
+        m = re.search(r"([\d.,]+)\s*m²\s*de\s+terreno", str(texto), re.IGNORECASE)
+        if m:
+            return _num(m.group(1).replace(",", ""))
+    return None
+
+
 # ---------- normalizadores por portal ----------
 
 def normalizar_inmuebles24(a: dict) -> dict:
@@ -142,7 +200,7 @@ def normalizar_pincali(a: dict) -> dict:
         "fuente": "pincali",
         "titulo": a.get("title") or f"{tipo} en {donde}",
         "precio": _num(a.get("price")),
-        "m2": _num(a.get("areaM2")),
+        "m2": _m2_pincali(a),
         "ubicacion": a.get("fullAddress") or a.get("locationText"),
         "ciudad": a.get("city"),
         "estado": a.get("state"),
@@ -190,6 +248,12 @@ def obtener_anuncios_torreon(max_por_fuente: int | None = None) -> tuple[list[di
         ),
     ]
 
+    fuentes = [f for f in fuentes if f[0] in FUENTES_ACTIVAS]
+    if not fuentes:
+        raise RuntimeError(
+            "No hay fuentes activas. Revisa FUENTES_ACTIVAS en .env o en scraper.py."
+        )
+
     for nombre, actor_id, run_input, normalizar in fuentes:
         try:
             crudos = _correr_actor(client, actor_id, run_input)
@@ -223,10 +287,8 @@ def obtener_anuncios_torreon(max_por_fuente: int | None = None) -> tuple[list[di
             detalle[nombre] = {"estatus": "error", "error": str(e), "crudos": 0, "normalizados": 0}
             print(f"  [{nombre}] ERROR: {e}")
 
-    detalle["vivanuncios"] = {
-        "estatus": "descartado",
-        "razon": "los 2 actores disponibles fallaron en pruebas reales (crash / bloqueo Cloudflare)",
-    }
+    for nombre, motivo in FUENTES_APAGADAS.items():
+        detalle.setdefault(nombre, dict(motivo))
     return anuncios, detalle
 
 

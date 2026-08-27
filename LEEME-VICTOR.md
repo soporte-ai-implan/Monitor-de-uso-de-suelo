@@ -32,18 +32,38 @@ para cPanel no hace falta.
 
 ```bash
 cd ~ && git clone git@github.com:soporte-ai-implan/Monitor-de-uso-de-suelo.git monitor
-cd ~/monitor && python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+cd ~/monitor && bash tools/instalar_cpanel.sh
 ```
 
-El clone es por SSH porque el cron tiene que poder hacer `git pull` solo, sin
-que nadie teclee una contraseña. Requiere una llave de despliegue: genera una
-en el servidor con `ssh-keygen -t ed25519 -C "cpanel-implan"` (sin
-passphrase, si no el cron se atora pidiéndola) y sube la pública en el repo,
-Settings -> Deploy keys, sin permiso de escritura. Comprueba con
-`ssh -T git@github.com` antes de seguir.
+El clone es por SSH porque el cron hace `git pull` solo, sin nadie enfrente.
+Requiere una llave de despliegue: genérala en el servidor con
+`ssh-keygen -t ed25519 -C "cpanel-implan"` **sin passphrase** (con passphrase
+el cron se atora pidiéndola) y sube la pública en el repo, Settings -> Deploy
+keys, sin permiso de escritura. Comprueba con `ssh -T git@github.com` antes de
+seguir.
 
-Sin dependencias binarias a propósito: el point-in-polygon está a mano en
-`zonas.py` justo para no arrastrar shapely/GDAL.
+El script comprueba el terreno **antes** de tocar nada —versión de Python,
+salida a internet hacia Apify y Nominatim, permisos de escritura— y se detiene
+con el motivo si algo falta, en vez de instalar a medias y fallar tres pasos
+después. Si pasa, crea el venv, instala dependencias, corre las 5 suites y te
+imprime la línea de cron y el symlink ya con tus rutas.
+
+La comprobación de salida a internet es la que más se pasa por alto: muchos
+hostings compartidos la bloquean, y sin ella el pipeline no puede llamar a
+Apify aunque Python funcione. Si eso falla, el camino es otro (el C de
+`docs/despliegue_cpanel.md`) y conviene saberlo en el minuto uno.
+
+Si prefieres a mano, es lo de siempre:
+
+```bash
+python3 -m venv .venv && ./.venv/bin/pip install -r requirements.txt
+```
+
+El código compila desde **Python 3.8**, aunque el objetivo es 3.9 o mayor. Sin
+dependencias binarias a propósito.
+
+El point-in-polygon está escrito a mano en `zonas.py` justo para no arrastrar
+shapely ni GDAL, que en hosting compartido son la principal fuente de dolor.
 
 ### El `.env`
 
@@ -110,25 +130,74 @@ cd ~/monitor && ./.venv/bin/python main.py --seco --max 20
 `--seco` no escribe en la base ni gasta de más. Si eso corre, quita `--seco`,
 verifica que se haya reescrito `web/datos.js` y abre el tablero.
 
-## Dos cosas que conviene que sepas
+## Qué cambió desde que se escribió esta nota
 
-**1. Pincali está caído desde el 29/07.** El Actor termina `SUCCEEDED` y
-devuelve 0 items. El monitor lleva ~4 días corriendo con una sola fuente
-(Inmuebles24, ~120 crudos → 98 publicados).
+Todo esto ya está en la rama `claude/monitor-implan-railway-jhwtju` y pasa las
+5 suites de `tests/`.
 
-Eso destapó un bug que ya está arreglado: el pipeline contaba "terminó bien" como
-"la fuente respondió", así que `fuentes_ok` incluía a Pincali y el blindaje de
-bajas de `database.py` archivaba su inventario completo como si se hubiera
-vendido. Ahora una fuente que devuelve cero se marca `vacia`, queda fuera de
-`fuentes_ok`, la corrida se reporta `parcial` y el tablero lo dice en pantalla.
-Está cubierto en `tests/test_scraper.py`.
+**El pipeline ahora cierra el ciclo solo.** `main.py` no se limita a reescribir
+`web/datos.js`: también reclasifica zonas y vuelve a armar el HTML
+autocontenido. Antes había que empaquetarlo a mano, así que el archivo que se
+mandaba por correo decía "actualizado el 1 de agosto" con el cron corriendo al
+día.
 
-Queda pendiente ver si el Actor de Pincali se rompió o si Pincali les cambió el
-HTML. Es independiente de la migración.
+**Las zonas se reclasifican en cada corrida** (`database.reclasificar_zonas()`).
+La zona se asignaba solo al dar de alta un anuncio, nunca después, así que la
+base acumulaba reglas de distintas épocas: había una fila guardada como "Zona 2
+/ borde" cuyas coordenadas caen fuera del municipio según las reglas de hoy. El
+tablero la descartaba y la base la seguía contando — de ahí que la pantalla
+mostrara 97 y 98 a la vez. No borra nada: lo que cae fuera conserva su motivo.
 
-**2. Railway trae código viejo** (commit `577e02b`), o sea el bug sigue vivo
-ahí. Cuando cPanel quede probado, se apaga Railway y ya. Mientras tanto conviene
-no dejar los dos escribiendo.
+**Pincali sí sirve, y el problema era nuestro.** Se corrió el Actor a mano con
+la URL y el input de producción. Dos hallazgos distintos:
+
+- El tope de ~5 anuncios lo pone el Actor por ser cuenta gratuita, con este
+  mensaje suyo: *"free accounts have limited data extraction"*. La URL y el
+  input estaban bien.
+- `areaM2` viene `null` en todos, pero la superficie **sí** llega, en
+  `features` como texto (`"601.15 m² de terreno"`). `normalizar_pincali()` solo
+  miraba `areaM2`, así que se tiraba la superficie de anuncios ya pagados. Lo
+  resuelve `_m2_pincali()`; ojo al tocarlo, porque en `features` conviven
+  renglones de largo y frente que no son superficie.
+
+**El tablero se refresca solo también en estático.** Preguntaba cada hora a
+`/api/monitor-terrenos`, lo cual solo sirve donde hay API. Ahora además consulta
+`estado.json` y, si trae una corrida más nueva, recarga para tomar los archivos
+regenerados. Una sola recarga por corrida, para no quedarse en círculo.
+
+## Lo que hay que decidir antes de dejarlo solo
+
+**El costo de Apify.** Es lo más urgente. El Actor de Inmuebles24 cobra
+**$0.005 por resultado** en cuenta gratuita, y devuelve ~120 por corrida: unos
+**$0.60 diarios**, ~$18 al mes. El crédito gratuito son $5, así que **se agota
+en unos 8 días** corriendo a diario. O se contrata plan, o se baja la
+frecuencia. Corriendo diario no cabe en el gratuito.
+
+**`terrenos.db` no viene en el paquete, y hay que rescatarla de Railway.**
+La base se crea sola en la primera corrida, así que el pipeline arranca sin
+problema. Pero la que trae el historial real —altas, bajas, cambios de precio y
+`fecha_primera_vista` desde el 27/07— vive en el volumen de Railway. **Si se
+apaga Railway sin exportarla, ese historial se pierde y no se puede
+reconstruir**, porque los portales no publican cuándo apareció cada anuncio.
+
+Bájala antes de apagar nada y déjala en `~/monitor/terrenos.db`. Los días en el
+mercado no dependen de ella (se calculan contra `fecha_publicacion`, que viene
+del portal), pero las altas, las bajas y los cambios de precio sí: sin base
+previa, la primera corrida reporta todo como nuevo.
+
+Y decide dónde va a vivir: con cron en cPanel se queda en `~/monitor` y no hay
+más que pensar; si el pipeline corre desde fuera, hay que persistirla entre
+corridas o cada ejecución empieza de cero.
+
+**La serie histórica todavía se reconstruye.** Las tablas `corridas` e
+`historial_precios` existen pero el payload no las publica, así que la gráfica
+de tendencia se arma con la mediana por mes de publicación de la oferta
+vigente. No es un índice de precios y el tablero no lo presenta como tal. En
+cuanto se acumulen corridas diarias reales, basta publicar la serie como
+`DATOS_MONITOR.serie` y el frontend la toma sola, sin tocar nada.
+
+**Railway trae código viejo** (commit `577e02b`). Cuando cPanel quede probado se
+apaga. Mientras tanto conviene no dejar los dos escribiendo sobre lo mismo.
 
 ## Si el hosting no deja correr el cron
 

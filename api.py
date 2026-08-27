@@ -272,12 +272,17 @@ def _mediana(valores: list[float]) -> float | None:
 #
 # Los cortes son provisionales: deberian ser los que IMPLAN ya usa por
 # normativa o por tipo de uso de suelo, no los que se deducen de los datos.
+#
+# Los nombres van por medida, no por adjetivo: "lote chico" es una opinion y
+# cambia segun quien lea; "menor de 300 m2" es verificable. Tienen que quedar
+# IGUALES a SEGMENTOS en web/tablero.js, o la API y el tablero reportan cortes
+# distintos con el mismo nombre.
 SEGMENTOS = [
-    ("Lote chico",     "menos de 300 m²",        0,       300),
-    ("Lote medio",     "300 a 600 m²",           300,     600),
-    ("Lote grande",    "600 a 1,500 m²",         600,     1_500),
-    ("Predio",         "1,500 a 10,000 m²",      1_500,   10_000),
-    ("Rústico/ejidal", "más de 10,000 m²",       10_000,  float("inf")),
+    ("Predio menor de 300 m²",        "menos de 300 m²",   0,       300),
+    ("Predio de 300 a 600 m²",        "300 a 600 m²",      300,     600),
+    ("Predio de 600 a 1,500 m²",      "600 a 1,500 m²",    600,     1_500),
+    ("Predio de 1,500 a 10,000 m²",   "1,500 a 10,000 m²", 1_500,   10_000),
+    ("Predio mayor a 10,000 m²",      "más de 10,000 m²",  10_000,  float("inf")),
 ]
 
 

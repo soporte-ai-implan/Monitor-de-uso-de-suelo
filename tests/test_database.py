@@ -126,6 +126,43 @@ def main() -> int:
     check(motivos["no_terreno"] == 1, "cuenta 1 que no es terreno")
     check(motivos["sin_precio"] == 1, "cuenta 1 sin precio")
 
+    print("\nRECLASIFICAR — la base no debe quedarse con reglas viejas")
+    # El caso real: i24-145257488 ("La Nueva Laguna"), guardado el 28/07/2026
+    # como "Zona 2 / borde" antes de que existiera el guardián municipal. Sus
+    # coordenadas caen FUERA de Torreón; hoy zonas.py lo dice y el tablero lo
+    # descartaba, pero la base lo seguía contando: 97 contra 98 en pantalla.
+    rancio = anuncio("rancio1", "inmuebles24")
+    rancio.update({"lat": 25.6146312, "lon": -103.4240849,
+                   "zona": "Zona 2 - Zona Norte", "zona_estado": "borde",
+                   "zona_motivo": "zona más cercana (0.4 km)"})
+    database.guardar_anuncios([rancio], fuentes_ok=["inmuebles24"])
+
+    import zonas
+    dice = zonas.clasificar(rancio["lon"], rancio["lat"], rancio["ciudad"],
+                            rancio["nombre_colonia"], rancio["ubicacion"], rancio["titulo"])
+    check(dice["estado"] == "fuera",
+          "zonas.py hoy dice que ese punto cae fuera del municipio", dice["estado"])
+
+    antes = [a for a in database.obtener_activos() if a["id_anuncio"] == "rancio1"][0]
+    check(antes["zona_estado"] == "borde", "la fila entra con la clasificación vieja")
+
+    rz = database.reclasificar_zonas()
+    check(rz["reclasificados"] >= 1, "detecta al menos una fila desactualizada",
+          f"reclasificados={rz['reclasificados']}")
+
+    despues = [a for a in database.obtener_activos() if a["id_anuncio"] == "rancio1"][0]
+    check(despues["zona_estado"] == "fuera", "queda marcada como fuera", str(despues["zona_estado"]))
+    check(despues["zona"] is None, "y sin zona asignada", str(despues["zona"]))
+    check(despues["zona_motivo"] and "municipio" in despues["zona_motivo"],
+          "conserva el motivo, el descarte es auditable", str(despues["zona_motivo"]))
+    check(any(a["id_anuncio"] == "rancio1" for a in database.obtener_activos()),
+          "NO se borra la fila: el descarte se registra, no se esconde")
+
+    # Idempotente: correrla dos veces seguidas no debe mover nada mas.
+    rz2 = database.reclasificar_zonas()
+    check(rz2["reclasificados"] == 0, "una segunda pasada ya no cambia nada",
+          f"reclasificados={rz2['reclasificados']}")
+
     print("\n" + "=" * 62)
     if fallas:
         print(f"FALLARON {len(fallas)} verificacion(es):")

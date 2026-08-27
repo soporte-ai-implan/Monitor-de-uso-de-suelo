@@ -131,7 +131,7 @@ Ambos actores traen el campo: Inmuebles24 da `city` y `province`, Pincali da
    si alguien cambia el umbral, la prueba avisa que este caso se movió.
 2. **Falso negativo rural**: un terreno real de Torreón a más de 3.0 km de toda
    zona se descarta. En la corrida real fueron 2 de 20 (La Perla a 4.2 km y otro
-   a 4.6 km). Las 5 zonas son unión de colonias SEPOMEX y no cubren el municipio
+   a 4.6 km). Las 5 zonas son unión de colonias SEPOMEX —agrupadas siguiendo los distritos del Plan Director de Desarrollo Urbano— y no cubren el municipio
    completo: las áreas ejidales quedan como huecos.
 3. **Anuncios sin coordenadas ni dirección geocodificable**: 4 de 20 en la
    corrida real. Traen colonia (`Fraccionamiento Los Viñedos`, `El Campanario`,

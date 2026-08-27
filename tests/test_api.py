@@ -86,8 +86,30 @@ def main() -> int:
     for llave in ("total", "ultima_actualizacion", "terrenos", "fuentes"):
         check(llave in d, f"/api/monitor-terrenos trae '{llave}'")
     check(isinstance(d.get("terrenos"), list), "'terrenos' es una lista")
-    check(d["fuentes"]["descartadas"] == ["vivanuncios"],
-          "declara Vivanuncios como descartada", str(d["fuentes"]))
+
+    # 'fuentes' tiene DOS formas y hay que probar las dos por separado, porque
+    # antes esto leia la base de verdad: con la base recien creada salia la
+    # forma de respaldo y la prueba pasaba, y en cuanto habia una corrida
+    # guardada salia la otra y tronaba. O sea que fallaba solo despues de la
+    # primera corrida real, que es el peor momento para enterarse.
+    original = api.database.ultima_corrida
+    try:
+        api.database.ultima_corrida = lambda: None
+        f = c.get("/api/monitor-terrenos").json()["fuentes"]
+        check(f["descartadas"] == ["vivanuncios"],
+              "sin corridas: declara Vivanuncios como descartada", str(f))
+
+        api.database.ultima_corrida = lambda: {"detalle": {"fuentes": {
+            "inmuebles24": {"estatus": "ok", "crudos": 120},
+            "pincali": {"estatus": "ok", "crudos": 0},
+        }}}
+        f = c.get("/api/monitor-terrenos").json()["fuentes"]
+        check(f["inmuebles24"]["estatus"] == "ok",
+              "con corrida: reporta el estatus real por portal", str(f))
+        check(f["pincali"]["estatus"] == "vacia",
+              "un 'ok' con cero anuncios se reetiqueta 'vacia'", str(f))
+    finally:
+        api.database.ultima_corrida = original
 
     print("\nGeoJSON de zonas")
     z = c.get("/api/zonas").json()

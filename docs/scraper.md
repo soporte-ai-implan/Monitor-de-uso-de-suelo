@@ -18,7 +18,36 @@ Torreón. Trae lat/lon, precio, m², URL.
 tiene un bug confirmado: combinar `location` + `property_type` regresa **0
 resultados** para Torreón. No usarlo.
 
-### Pincali — `azzouzana/pincali-com-scraper-by-search-url`
+### Pincali — lo que se midió el 21/08/2026
+
+Se corrió el Actor a mano con la URL y el input de producción, para separar un
+problema nuestro de uno del proveedor. Salieron **dos cosas distintas**:
+
+**1. El tope de 5 anuncios es del Actor, no nuestro.** Termina `SUCCEEDED` y
+devuelve 5, con este mensaje suyo: *"To ensure service stability, free accounts
+have limited data extraction. Upgrade to a paid plan to unlock full access"*. La
+URL y el input estaban bien. Con plan de pago debería devolver más; hay que
+volver a medirlo cuando se contrate.
+
+**2. La superficie sí venía, y la estábamos tirando.** El Actor deja `areaM2`
+en `null` (5 de 5), pero publica la superficie en `features`, como texto:
+
+```
+["25,748 m² de terreno", "Publicado", "25,748 m² de terreno"]
+["200 m² de terreno", "20 m de largo", "10 m de frente", ...]
+```
+
+`normalizar_pincali()` solo leía `areaM2`, así que **todos** los anuncios de
+Pincali entraban sin superficie, y sin superficie no hay precio por m². Se
+pagaban y no servían. Lo resuelve `_m2_pincali()`, que prefiere `areaM2` por si
+algún día lo llenan y si no lo saca de `features`.
+
+Cuidado al tocar ese parseo: el número trae coma de millares y punto decimal
+(`14,496.79`), y en `features` conviven renglones de **largo** y **frente** que
+no son superficie. Confundirlos arruinaría el precio por m². Hay pruebas con los
+5 anuncios reales en `tests/test_scraper.py`.
+
+### Pincali — `azzouzana/pincali-com-scraper-by-search-url`### Pincali — `azzouzana/pincali-com-scraper-by-search-url`
 
 ```python
 {"maxItems": 200, "startUrl": "https://www.pincali.com/inmuebles/terrenos-en-venta-en-torreon-coahuila"}
