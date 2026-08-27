@@ -199,6 +199,47 @@ def main() -> int:
         check(bool(det2.get(apagada, {}).get("razon")),
               f"'{apagada}' dice por qué quedó fuera")
 
+    print("\nBLINDAJE 3 — una fuente que rinde de menos no es de fiar")
+    # El caso real del 27/08/2026: Inmuebles24 devolvió 60 de los ~120
+    # habituales y terminó 'ok'. Se archivaron 56 terrenos reales como vendidos.
+    import main as _main
+
+    original = _main.database.ultima_corrida
+    try:
+        _main.database.ultima_corrida = lambda: {
+            "detalle": {"fuentes": {"inmuebles24": {"estatus": "ok", "crudos": 120},
+                                    "pincali": {"estatus": "ok", "crudos": 5}}}}
+
+        hoy = {"inmuebles24": {"estatus": "ok", "crudos": 60},
+               "pincali": {"estatus": "ok", "crudos": 5}}
+        check(_main._detectar_mermas(hoy) == ["inmuebles24"],
+              "120 -> 60 se marca mermada", str(_main._detectar_mermas(hoy)))
+
+        # Pincali entrega ~5 por el tope de cuenta gratuita. Sin el piso de
+        # comparación viviría marcada como mermada por puro ruido.
+        hoy2 = {"pincali": {"estatus": "ok", "crudos": 3}}
+        check(_main._detectar_mermas(hoy2) == [],
+              "una fuente chica (5 -> 3) NO se marca: no hay con qué comparar")
+
+        # El vaivén normal del inventario no debe disparar el blindaje.
+        hoy3 = {"inmuebles24": {"estatus": "ok", "crudos": 100}}
+        check(_main._detectar_mermas(hoy3) == [],
+              "120 -> 100 es vaivén normal, no merma")
+
+        # Y crecer nunca es sospechoso.
+        hoy4 = {"inmuebles24": {"estatus": "ok", "crudos": 200}}
+        check(_main._detectar_mermas(hoy4) == [], "120 -> 200 no se marca")
+    finally:
+        _main.database.ultima_corrida = original
+
+    # Sin corrida previa no hay con qué comparar y no debe tronar.
+    try:
+        _main.database.ultima_corrida = lambda: None
+        check(_main._detectar_mermas({"inmuebles24": {"estatus": "ok", "crudos": 1}}) == [],
+              "sin corrida previa no marca nada y no truena")
+    finally:
+        _main.database.ultima_corrida = original
+
     print("\n" + "=" * 62)
     if fallas:
         print(f"FALLARON {len(fallas)} verificacion(es):")

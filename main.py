@@ -103,6 +103,50 @@ def _escribir_estado(**campos) -> None:
         print(f"  Aviso: no pude escribir estado.json: {e}")
 
 
+# Por debajo de esta fracción de lo que trajo la última corrida buena, la fuente
+# se considera mermada. 0.6 deja pasar el vaivén normal del inventario (±40% de
+# una corrida a otra ya sería noticia) y atrapa el desplome del 27/08, que fue a
+# la mitad. Subirlo daría falsos positivos cada vez que el mercado se mueve.
+UMBRAL_MERMA = 0.6
+
+# Debajo de esto no hay con qué comparar y la fracción es puro ruido: pasar de
+# 3 a 1 anuncio es -66% y no significa nada. Pincali entrega ~5 por el tope de
+# cuenta gratuita, así que sin este piso viviría marcada como mermada.
+MINIMO_PARA_COMPARAR = 20
+
+
+def _detectar_mermas(detalle_fuentes: dict) -> list[str]:
+    """
+    Fuentes que respondieron 'ok' pero con muchos menos anuncios que la última
+    corrida buena. Devuelve sus nombres.
+
+    Nunca lanza excepción: si no se puede leer la corrida anterior, se sigue sin
+    el blindaje en vez de tumbar la corrida.
+    """
+    try:
+        previa = database.ultima_corrida()
+        detalle = (previa or {}).get("detalle")
+        if isinstance(detalle, str):
+            detalle = json.loads(detalle)
+        antes = (detalle or {}).get("fuentes") or {}
+    except Exception:  # noqa: BLE001
+        return []
+
+    mermadas = []
+    for nombre, d in detalle_fuentes.items():
+        if d.get("estatus") != "ok":
+            continue
+        hoy = d.get("crudos") or 0
+        ayer = (antes.get(nombre) or {}).get("crudos") or 0
+        if ayer < MINIMO_PARA_COMPARAR or hoy >= ayer * UMBRAL_MERMA:
+            continue
+        mermadas.append(nombre)
+        print(f"\n  ALTO: '{nombre}' trajo {hoy} y la corrida anterior trajo "
+              f"{ayer} ({hoy / ayer:.0%}). Se trata como caída: no se dan de "
+              f"baja sus terrenos.")
+    return mermadas
+
+
 def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dict:
     inicio = datetime.now()
     print(f"\n=== Monitor de Suelo IMPLAN — corrida {inicio:%Y-%m-%d %H:%M:%S} ===")
@@ -115,12 +159,30 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
         # 1) Scraping
         print("\n[1/3] Extrayendo de Apify...")
         crudos, detalle_fuentes = scraper.obtener_anuncios_torreon(max_por_fuente)
+
+        # BLINDAJE 3 — una fuente que rinde de MENOS tampoco es de fiar.
+        #
+        # Los blindajes 1 y 2 cubren la fuente que devuelve cero. El 27/08/2026
+        # apareció el caso intermedio, que es peor porque no se nota: el Actor
+        # de Inmuebles24 devolvió 60 de los ~120 habituales y terminó 'ok'. Los
+        # 60 que no llegaron se leyeron como desaparecidos y la corrida archivó
+        # 56 terrenos reales como vendidos, sin una sola señal de error.
+        #
+        # Así que se compara contra la última corrida buena. Un desplome no se
+        # puede distinguir de un mercado que se movió de golpe, y ante la duda
+        # NO se archiva: publicar "se vendió la mitad del suelo de Torreón" por
+        # una falla del scraper es el peor error que puede cometer el monitor.
+        mermadas = _detectar_mermas(detalle_fuentes)
+        for nombre in mermadas:
+            detalle_fuentes[nombre]["estatus"] = "mermada"
+
         fuentes_ok = [n for n, d in detalle_fuentes.items() if d.get("estatus") == "ok"]
         caidas = [n for n, d in detalle_fuentes.items()
-                  if d.get("estatus") in ("error", "vacia")]
+                  if d.get("estatus") in ("error", "vacia", "mermada")]
         if caidas:
-            print(f"\n  OJO: {len(caidas)} fuente(s) sin datos hoy: {', '.join(caidas)}. "
-                  f"Sus terrenos NO se dan de baja; la corrida se marca 'parcial'.")
+            print(f"\n  OJO: {len(caidas)} fuente(s) sin datos confiables hoy: "
+                  f"{', '.join(caidas)}. Sus terrenos NO se dan de baja; "
+                  f"la corrida se marca 'parcial'.")
 
         if not crudos:
             # No es lo mismo "no hay terrenos en venta" que "el scraper tronó".
@@ -222,6 +284,19 @@ def correr_monitor(max_por_fuente: int | None = None, seco: bool = False) -> dic
                 empaquetar_html.main()
             except Exception as e:  # noqa: BLE001 - el tablero de carpeta ya quedo
                 print(f"  Aviso: no pude rearmar el HTML autocontenido: {e}")
+
+            # Copia legible de los anuncios en datos_back/, para revisarlos sin
+            # abrir la base ni escribir SQL. Va aparte del tablero a proposito:
+            # el tablero publica lo vigente, esto guarda todo lo que la base
+            # conoce, archivados incluidos.
+            try:
+                import exportar_datos_back
+
+                r = exportar_datos_back.exportar()
+                print(f"  datos_back/: {r['total']} anuncios "
+                      f"({r['csv'].name}, {r['json'].name})")
+            except Exception as e:  # noqa: BLE001 - la base ya quedo guardada
+                print(f"  Aviso: no pude exportar a datos_back/: {e}")
         except Exception as e:  # noqa: BLE001 - no debe tumbar la corrida
             print(f"  Aviso: no pude regenerar el dashboard estático: {e}")
 

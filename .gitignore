@@ -5,6 +5,7 @@
 *.db
 *.db-journal
 respaldos/
+datos_back/
 data/cache_geocoding.json
 
 # Bitacora del scheduler

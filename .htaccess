@@ -34,7 +34,7 @@
 
 # --- Carpetas internas ---
 # 404 y no 403 a proposito: un 403 confirma que la ruta existe.
-RedirectMatch 404 ^/(logs|tests|tools|docs|respaldos|\.git|__pycache__)(/|$)
+RedirectMatch 404 ^/(logs|tests|tools|docs|respaldos|datos_back|\.git|__pycache__)(/|$)
 
 # data/ guarda el cache de geocoding y el diagnostico de la ultima corrida, que
 # trae los anuncios rechazados con su motivo. Los geojson que el mapa necesita
