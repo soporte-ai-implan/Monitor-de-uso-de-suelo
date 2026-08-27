@@ -115,9 +115,16 @@ El plan gratuito da $5 USD al mes. Una corrida de prueba con 25 resultados
 consumió centavos; la corrida completa pide ~102 (84 de Inmuebles24 + 18 de
 Pincali), o sea 4-5 veces más.
 
-Ya está medido y **no cabe**: $0.005 por resultado × ~120 = $0.60 por corrida,
-~$18 al mes a diario contra $5 de crédito gratuito. Se agota en unos 8 días. El
-cron corre **semanal** por eso (~$2.60 al mes); a diario solo con plan de pago.
+Ya está medido. Apify cobra **por resultado entregado**, no por el tope pedido:
+`MAX_RESULTADOS_POR_FUENTE=200` es el techo y nunca se alcanza. Lo que llega de
+verdad son ~120 de Inmuebles24 más 5 de Pincali (medido el 27/08/2026), o sea
+**$0.60 por corrida** a $0.005 el resultado.
+
+A diario son ~$18 al mes contra $5 de crédito gratuito: se agota en 8 días. El
+cron corre **cada 3 días** (~$6 al mes), que se pasa del gratuito por ~$1 y deja
+las últimas 2 corridas del mes sin ejecutar. Es a sabiendas: da resolución de
+±3 días en altas y bajas. Semanal (~$2.60) cabe holgado si se prefiere no
+gastar.
 
 **La perilla del costo es la frecuencia, nunca `MAX_RESULTADOS_POR_FUENTE`.**
 Bajar el tope no ahorra proporcionalmente y rompe el monitor en silencio: los

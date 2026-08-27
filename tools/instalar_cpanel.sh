@@ -117,11 +117,14 @@ cat <<TXT
        ln -s ${RAIZ}/web ~/public_html/monitor
      (o apunta el subdominio monitor.trcimplan.gob.mx a esa ruta)
 
-  d) El cron, una sola linea:
-       0 3 * * * cd ${RAIZ} && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
+  d) El cron, una sola linea. Corre cada 3 dias, no a diario: Apify cobra
+     \$0.005 por resultado y llegan ~125 por corrida (\$0.60), asi que a
+     diario son ~\$18/mes contra \$5 de credito gratuito.
+       0 3 */3 * * cd ${RAIZ} && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
 
-  e) Si Railway sigue vivo, BAJA terrenos.db antes de apagarlo: trae el
-     historial desde el 27/07 y no se puede reconstruir.
+  e) NO bajes MAX_RESULTADOS_POR_FUENTE para gastar menos. Lo que no llega se
+     lee como desaparecido y la corrida reporta bajas falsas. La perilla del
+     costo es la frecuencia de esta linea, no el tope.
 
 TXT
 printf "${VERDE}Terreno verificado y entorno listo.${NEG}\n"

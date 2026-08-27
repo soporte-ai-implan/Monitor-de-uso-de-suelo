@@ -73,9 +73,11 @@ ln -s ~/monitor/web ~/public_html/monitor
 
 Con eso el dashboard queda en `trcimplan.gob.mx/monitor`.
 
-### 5. La corrida diaria
+### 5. La corrida periódica
 
-En **Cron Jobs**, una tarea a las 3:00 AM (`0 3 * * *`):
+En **Cron Jobs**, una tarea cada 3 días a las 3:00 AM (`0 3 */3 * *`). No es
+diaria por costo de Apify: ~$0.60 por corrida, ~$18/mes a diario contra $5 de
+crédito gratuito. La cuenta completa está en `LEEME-VICTOR.md`.
 
 ```bash
 cd ~/monitor && ./.venv/bin/python main.py >> logs/corridas.log 2>&1

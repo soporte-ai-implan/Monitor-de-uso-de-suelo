@@ -94,21 +94,42 @@ archivos.
 Una línea, una vez. A partir de ahí se actualiza solo:
 
 ```
-0 3 * * 1   cd ~/monitor && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
+0 3 */3 * *   cd ~/monitor && git pull --quiet && ./.venv/bin/python main.py >> logs/corridas.log 2>&1
 ```
 
 `mkdir ~/monitor/logs` antes, si no existe.
 
-**Corre semanal, los lunes a las 3, y es a propósito.** El Actor de Inmuebles24
-cobra $0.005 por resultado y devuelve ~120 por corrida: $0.60 cada vez. A diario
-son ~$18 al mes contra $5 de crédito gratuito, o sea que se apaga solo a los
-ocho días y va a parecer que se rompió. Semanal son ~$2.60 al mes y cabe con
-holgura.
+**Corre cada 3 días, a las 3 de la mañana.** `*/3` es día del mes, así que en
+meses de 31 días el salto de fin de mes queda de un día en vez de tres. No
+importa para esto.
 
-No se pierde casi nada: los anuncios de suelo duran semanas publicados. Lo
-único que baja es la resolución de las altas y bajas, que pasa a ±7 días. Si más
-adelante se contrata plan de Apify, se sube a diario cambiando el `1` final por
-un `*`.
+### La cuenta del costo, con los números medidos
+
+Apify cobra **por resultado entregado**, no por el tope que uno pide. Son cosas
+distintas y conviene no confundirlas:
+
+| | |
+|---|---|
+| `MAX_RESULTADOS_POR_FUENTE=200` | el **techo**. Nunca se alcanza; es una red |
+| ~120 de Inmuebles24 + 5 de Pincali | lo que de verdad llega, medido el 27/08 |
+| $0.005 por resultado | tarifa del Actor de Inmuebles24 en cuenta gratuita |
+
+O sea **$0.60 por corrida**, no $1.00. El 200 solo se cobraría si el inventario
+de terrenos en Torreón creciera a 200, y ahí ya tendríamos un problema más
+interesante que la factura.
+
+| Frecuencia | Corridas/mes | Costo | ¿Cabe en los $5 gratis? |
+|---|---|---|---|
+| Diario | 30 | ~$18 | No, se apaga a los 8 días |
+| **Cada 3 días** | ~10 | **~$6** | **Se pasa ~$1** |
+| Semanal | 4.3 | ~$2.60 | Sí, con holgura |
+
+Cada 3 días **se pasa del crédito gratuito por poco**: alcanza para unas 8
+corridas y las últimas 2 del mes no correrían. Es una decisión tomada a
+sabiendas, porque da mejor resolución de altas y bajas (±3 días en vez de ±7).
+Si al final de algún mes el tablero se queda quieto, es esto y no una falla:
+`estado.json` deja de avanzar y el crédito de Apify aparece en cero. Se arregla
+con un plan de pago barato, o volviendo a semanal (`0 3 * * 1`).
 
 **Lo que NO hay que hacer es bajar `MAX_RESULTADOS_POR_FUENTE`.** Es tentador
 —"si son 120, que traiga 15"— pero rompe el monitor en silencio: los 105 que no
@@ -187,10 +208,10 @@ regenerados. Una sola recarga por corrida, para no quedarse en círculo.
 
 ## Lo que hay que decidir antes de dejarlo solo
 
-**El costo de Apify.** Resuelto bajando el cron a semanal (ver la sección del
-cron, arriba): ~$2.60 al mes contra $5 de crédito gratuito. Queda pendiente
-decidir si se contrata plan para volver a diario, pero ya no es urgente y el
-monitor no se va a apagar solo a mitad de mes.
+**El costo de Apify.** Acotado bajando el cron a cada 3 días: ~$6 al mes contra
+$5 de crédito gratuito (ver la cuenta completa en la sección del cron). Se pasa
+por poco y a sabiendas. Queda por decidir si se contrata un plan barato o si se
+baja a semanal, que sí cabe holgado.
 
 ### `terrenos.db`: dónde vive y cómo no perderla
 
@@ -209,21 +230,31 @@ corrupta y el punto es tener a qué volver. Si una corrida ensucia los datos:
 cp ~/monitor/respaldos/terrenos-AAAA-MM-DD.db ~/monitor/terrenos.db
 ```
 
-**La base de Railway trae el historial real** —altas, bajas, cambios de precio y
-`fecha_primera_vista` desde el 27/07— y **no se puede reconstruir**, porque los
-portales no publican cuándo apareció cada anuncio. Cuando aparezca, va así:
+### El historial del 27/07 al 27/08 se perdió
 
-```bash
-# con el cron detenido, para que no escriba a media copia
-cp ~/monitor/terrenos.db ~/monitor/respaldos/antes-de-railway.db   # por si acaso
-cp /donde/hayas/bajado/terrenos.db ~/monitor/terrenos.db
-cd ~/monitor && ./.venv/bin/python main.py --seco --max 20         # que abra bien
-```
+Hay que decirlo con todas sus letras porque afecta cómo se lee el tablero. La
+base que vivía en el volumen de Railway traía las altas, las bajas, los cambios
+de precio y la `fecha_primera_vista` de ese mes. Railway se apagó antes de
+exportarla y **no se puede reconstruir**: los portales no publican cuándo
+apareció cada anuncio, así que ese dato no existe en ningún otro lado.
 
-Los días en el mercado no dependen de ella (se calculan contra
-`fecha_publicacion`, que viene del portal), pero las altas, las bajas y los
-cambios de precio sí: sin base previa, la primera corrida reporta todo como
-nuevo.
+**La serie arranca de cero el 27/08/2026.** Consecuencias concretas:
+
+- La primera corrida reportó los 111 terrenos como `nuevos` y 0 bajas. No es un
+  error: es una base vacía viendo el inventario por primera vez. Se corrige sola
+  a partir de la segunda corrida.
+- **Los días en el mercado sí son correctos desde el día uno**, porque se
+  calculan contra `fecha_publicacion`, que viene del portal y no de nuestra
+  base. Por eso el tablero ya puede decir "60 días de mediana" sin haber
+  observado esos 60 días.
+- Lo que no se puede responder todavía es "cuántos terrenos se dieron de baja
+  este mes" ni "a cuáles les bajaron el precio". Eso necesita corridas
+  acumuladas y empieza a tener sentido después de varias.
+
+No hay que hacer nada al respecto salvo no borrar `terrenos.db`. Por eso existen
+los respaldos de arriba: para que esto no vuelva a pasar. Si alguien apaga o
+migra algo que tenga la base adentro, **exportarla es el primer paso, no el
+último**.
 
 **La serie histórica todavía se reconstruye.** Las tablas `corridas` e
 `historial_precios` existen pero el payload no las publica, así que la gráfica
